@@ -9,32 +9,59 @@ from typing import Optional
 from decimal import Decimal
 
 
+# --- Academic Session & Class Group DTOs ---
+@dataclass(frozen=True)
+class AcademicSessionDTO:
+    id: Optional[int] = None
+    name: str = ""
+    start_date: str = ""
+    end_date: str = ""
+    is_active: bool = True
+
+
+@dataclass(frozen=True)
+class ClassGroupDTO:
+    id: Optional[int] = None
+    session_id: int = 0
+    name: str = ""
+    section_or_batch: str = ""
+    group_type: str = "SchoolClass"  # 'SchoolClass' or 'AcademyBatch'
+    monthly_tuition_fee: Decimal = Decimal("0.00")
+
+
 # --- Student & Enrollment DTOs ---
 @dataclass(frozen=True)
 class StudentDTO:
-    id: Optional[int]
-    admission_number: str
-    first_name: str
-    last_name: Optional[str]
-    urdu_name: Optional[str]
-    gender: str
-    guardian_name: str
-    guardian_urdu_name: Optional[str]
-    guardian_phone: str
+    id: Optional[int] = None
+    admission_number: str = ""
+    first_name: str = ""
+    last_name: Optional[str] = None
+    urdu_name: Optional[str] = None
+    gender: str = "Male"
+    date_of_birth: Optional[str] = None
+    b_form_number: Optional[str] = None
+    guardian_name: str = ""
+    guardian_urdu_name: Optional[str] = None
+    guardian_relation: str = "Father"
+    guardian_phone: str = ""
+    guardian_whatsapp: Optional[str] = None
+    guardian_cnic: Optional[str] = None
     residential_address: Optional[str] = None
+    emergency_contact: Optional[str] = None
     is_active: bool = True
 
 
 @dataclass(frozen=True)
 class EnrollmentDTO:
-    id: Optional[int]
-    student_id: int
-    class_group_id: int
-    session_id: int
-    roll_number: Optional[str]
-    enrollment_date: str
-    status: str = "Active"
+    id: Optional[int] = None
+    student_id: int = 0
+    class_group_id: int = 0
+    session_id: int = 0
+    roll_number: Optional[str] = None
+    enrollment_date: str = ""
+    status: str = "Active"  # 'Active', 'Transferred', 'Withdrawn', 'Graduated'
     custom_discount_amount: Decimal = Decimal("0.00")
+
 
 
 # --- Fee & Receipt DTOs ---

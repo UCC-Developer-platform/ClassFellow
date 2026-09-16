@@ -88,3 +88,17 @@ def get_schema_version(conn: sqlite3.Connection) -> int:
 def set_schema_version(conn: sqlite3.Connection, version: int) -> None:
     """Updates the PRAGMA user_version of the database."""
     conn.execute(f"PRAGMA user_version = {version};")
+
+
+def init_database(db_path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
+    """
+    Creates a connection and runs all pending schema migrations up to the latest version.
+    
+    Returns:
+        A fully initialized, migrated sqlite3.Connection instance.
+    """
+    from services.schema_service import migrate_to_latest
+    conn = get_connection(db_path)
+    migrate_to_latest(conn)
+    return conn
+
