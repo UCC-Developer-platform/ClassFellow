@@ -10,7 +10,7 @@ import sqlite3
 from typing import Callable
 from database import get_schema_version, set_schema_version
 
-SCHEMA_VERSION_CURRENT = 1
+SCHEMA_VERSION_CURRENT = 2
 
 
 def migration_v1_initial_schema(conn: sqlite3.Connection) -> None:
@@ -177,8 +177,55 @@ def migration_v1_initial_schema(conn: sqlite3.Connection) -> None:
     set_schema_version(conn, 1)
 
 
+def migration_v2_attendance_schema(conn: sqlite3.Connection) -> None:
+    """
+    Executes Migration v2: Establishes batch_sessions and attendance_records
+    with UNIQUE(enrollment_id, attendance_date) constraint as specified in CF-SRS-04.
+    """
+    with conn:
+        # 1. Academy Lecture Sessions (Optional for Subject/Batch model)
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS batch_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            class_group_id INTEGER NOT NULL,
+            session_date TEXT NOT NULL,
+            start_time TEXT,
+            end_time TEXT,
+            topic_covered TEXT,
+            created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+            FOREIGN KEY (class_group_id) REFERENCES class_groups(id) ON DELETE RESTRICT
+        );
+        """)
+
+        # 2. Core Attendance Records
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS attendance_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            enrollment_id INTEGER NOT NULL,
+            attendance_date TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('Present', 'Absent', 'Late', 'Leave')),
+            batch_session_id INTEGER,
+            reason_note TEXT,
+            recorded_by_user_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+            updated_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+            FOREIGN KEY (enrollment_id) REFERENCES enrollments(id) ON DELETE RESTRICT,
+            FOREIGN KEY (batch_session_id) REFERENCES batch_sessions(id) ON DELETE SET NULL,
+            UNIQUE(enrollment_id, attendance_date)
+        );
+        """)
+
+        # 3. High-Performance Lookup Indexes
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_attendance_enrollment_date ON attendance_records(enrollment_id, attendance_date);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_attendance_date_status ON attendance_records(attendance_date, status);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_attendance_batch ON attendance_records(batch_session_id);")
+
+    set_schema_version(conn, 2)
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
-    1: migration_v1_initial_schema
+    1: migration_v1_initial_schema,
+    2: migration_v2_attendance_schema,
 }
 
 
@@ -194,3 +241,4 @@ def migrate_to_latest(conn: sqlite3.Connection) -> int:
         if ver in MIGRATIONS:
             MIGRATIONS[ver](conn)
     return get_schema_version(conn)
+

@@ -114,12 +114,24 @@ class PaymentDTO:
 
 # --- Attendance DTOs ---
 @dataclass(frozen=True)
+class BatchSessionDTO:
+    id: Optional[int] = None
+    class_group_id: int = 0
+    session_date: str = ""
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    topic_covered: Optional[str] = None
+
+
+@dataclass(frozen=True)
 class AttendanceEntryDTO:
     enrollment_id: int
     student_name: str
-    roll_number: Optional[str]
-    status: str  # 'Present', 'Absent', 'Late', 'Leave'
+    roll_number: Optional[str] = None
+    status: str = "Present"  # 'Present', 'Absent', 'Late', 'Leave'
     reason_note: Optional[str] = None
+    student_urdu_name: Optional[str] = None
+    guardian_phone: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -131,3 +143,4 @@ class AttendanceSummaryDTO:
     leave_days: int
     late_days: int
     percentage: float
+

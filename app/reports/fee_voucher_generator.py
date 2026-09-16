@@ -198,14 +198,28 @@ class FeeVoucherGenerator:
         c.drawString(x + 40, tbl_y - 11, "Fee Head / Description (تفصیل فیس)")
         c.drawRightString(x + w - 20, tbl_y - 11, "Amount (PKR)")
 
-        # Table Items
+        # Table Items (Render up to 4 rows; if >4 items, bundle overflow into "Other Charges")
         items = data.get("items", [])
         item_cursor_y = tbl_y - 25
         c.setFont(_FONT_NORMAL, 7.5)
         c.setFillColorRGB(0.1, 0.1, 0.1)
 
         total_heads_amount = Decimal("0.00")
-        for idx, item in enumerate(items[:4], start=1):  # Display up to 4 line items
+        if len(items) <= 4:
+            display_items = items
+        else:
+            # Display first 3 items individually and bundle the rest into row 4
+            display_items = list(items[:3])
+            other_sum = Decimal("0.00")
+            for ov in items[3:]:
+                other_sum += Decimal(str(ov.get("amount", "0.00")))
+            display_items.append({
+                "fee_head_name": "Other Charges",
+                "urdu_name": "متفرق فیس",
+                "amount": other_sum
+            })
+
+        for idx, item in enumerate(display_items, start=1):
             h_name = item.get("fee_head_name", "Fee")
             h_urdu = item.get("urdu_name")
             h_display = f"{h_name} ({format_urdu(h_urdu)})" if h_urdu else h_name
@@ -216,6 +230,7 @@ class FeeVoucherGenerator:
             c.drawString(x + 40, item_cursor_y, h_display)
             c.drawRightString(x + w - 20, item_cursor_y, f"{amt:,.2f}")
             item_cursor_y -= 11
+
 
         # Summary Sub-Block
         sum_box_y = tbl_y - tbl_h - 26

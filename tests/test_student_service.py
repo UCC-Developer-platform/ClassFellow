@@ -51,7 +51,8 @@ def test_setup(student_service):
 def test_migration_creates_required_tables_and_indexes(db_connection):
     """Verifies that migration_v1 creates all tables and indexes from SRS_02 and SRS_03."""
     version = migrate_to_latest(db_connection)
-    assert version == 1
+    assert version >= 1
+
 
     cursor = db_connection.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
