@@ -335,3 +335,110 @@ def test_get_by_admission_number_and_update_student(test_setup, student_service)
     assert refetched["guardian_phone"] == "03009998877"
     assert refetched["residential_address"] == "DHA Phase 5, Lahore"
 
+
+# --- Architectural Guardrail Tests ---
+
+def test_guardrail_phone_normalization_0092_prefix():
+    """Guardrail 3: Verifies stripping leading 0092 international prefix."""
+    assert normalize_pakistan_phone("00923001234567") == "03001234567"
+    assert normalize_pakistan_phone("0092-300-1234567") == "03001234567"
+
+
+def test_guardrail_auto_admission_uses_active_session_year(migrated_db, student_service):
+    """Guardrail 2: Verifies formatting sequential admission numbers using active session name (e.g. CF-2027-0001)."""
+    sess_id = student_service.create_academic_session(
+        name="2027-2028",
+        start_date="2027-04-01",
+        end_date="2028-03-31"
+    )
+    grp_id = student_service.create_class_group(
+        session_id=sess_id,
+        name="Class 10",
+        section_or_batch="Section Gold",
+        group_type="SchoolClass"
+    )
+    s = StudentDTO(
+        first_name="Qasim",
+        gender="Male",
+        guardian_name="Tahir",
+        guardian_phone="03004443322"
+    )
+    st_id, _ = student_service.register_student(s, grp_id, sess_id)
+    profile = student_service.get_student_by_id(st_id)
+    assert profile["admission_number"] == "CF-2027-0001"
+
+
+def test_guardrail_atomic_composite_transaction_rollback(test_setup, student_service, migrated_db):
+    """
+    Guardrail 1: Verifies that if enrollment fails inside register_student(),
+    the inserted student record is completely rolled back from the database.
+    """
+    cursor = migrated_db.cursor()
+    cursor.execute("SELECT COUNT(*) FROM students;")
+    initial_count = cursor.fetchone()[0]
+
+    # Create a temporary trigger to abort on specific roll number
+    cursor.execute("""
+    CREATE TRIGGER test_rollback_enrollment_failure
+    BEFORE INSERT ON enrollments
+    WHEN NEW.roll_number = 'FORCE_FAIL_ENROLLMENT'
+    BEGIN
+        SELECT RAISE(ABORT, 'Simulated enrollment constraint failure');
+    END;
+    """)
+
+    s = StudentDTO(
+        first_name="RollbackCandidate",
+        gender="Male",
+        guardian_name="FatherName",
+        guardian_phone="03001239999"
+    )
+
+    with pytest.raises(sqlite3.DatabaseError, match="Simulated enrollment constraint failure"):
+        student_service.register_student(
+            s,
+            test_setup["class_group_id"],
+            test_setup["session_id"],
+            roll_number="FORCE_FAIL_ENROLLMENT"
+        )
+
+    # Verify rollback: student record was NOT persisted in students table
+    cursor.execute("SELECT COUNT(*) FROM students;")
+    current_count = cursor.fetchone()[0]
+    assert current_count == initial_count
+
+    cursor.execute("SELECT id FROM students WHERE first_name = 'RollbackCandidate';")
+    assert cursor.fetchone() is None
+
+    # Cleanup trigger
+    cursor.execute("DROP TRIGGER IF EXISTS test_rollback_enrollment_failure;")
+
+
+
+def test_guardrail_case_insensitive_search_with_whitespace(test_setup, student_service):
+    """
+    Guardrail 4: Verifies case-insensitive search with leading/trailing whitespace normalization.
+    """
+    s = StudentDTO(
+        first_name="Zubair",
+        last_name="Khan",
+        gender="Male",
+        guardian_name="Sultan Khan",
+        guardian_phone="03217778899"
+    )
+    student_service.register_student(s, test_setup["class_group_id"], test_setup["session_id"])
+
+    # Search with whitespace and mixed cases
+    res1 = student_service.search_students("   zubair   ")
+    assert len(res1) == 1
+    assert res1[0]["first_name"] == "Zubair"
+
+    res2 = student_service.search_students("ZUBAIR")
+    assert len(res2) == 1
+    assert res2[0]["first_name"] == "Zubair"
+
+    res3 = student_service.search_students("khan")
+    assert len(res3) >= 1
+    assert any(r["last_name"] == "Khan" for r in res3)
+
+

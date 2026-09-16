@@ -7,6 +7,7 @@ WAL mode concurrency, and Decimal monetary serialization.
 
 import os
 import sqlite3
+from contextlib import contextmanager
 from decimal import Decimal
 from typing import Optional
 
@@ -21,7 +22,24 @@ sqlite3.register_converter("DECIMAL", lambda s: Decimal(s.decode("utf-8")))
 DEFAULT_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "classfellow.db")
 
 
+@contextmanager
+def transaction(conn: sqlite3.Connection):
+    """
+    Context manager for atomic SQLite transactions under isolation_level=None.
+    Issues 'BEGIN IMMEDIATE;' to acquire an immediate write lock and prevent concurrency races.
+    Commits on successful block completion, rolls back on any exception.
+    """
+    conn.execute("BEGIN IMMEDIATE;")
+    try:
+        yield conn
+        conn.execute("COMMIT;")
+    except Exception:
+        conn.execute("ROLLBACK;")
+        raise
+
+
 def get_connection(db_path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
+
     """
     Creates and configures a SQLite connection with mandatory engine pragmas.
 

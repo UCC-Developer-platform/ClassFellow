@@ -11,13 +11,14 @@ import sqlite3
 import datetime
 from decimal import Decimal
 from typing import Optional, Any
+from database import transaction
 from models import StudentDTO, EnrollmentDTO
 
 
 def normalize_pakistan_phone(phone: str) -> str:
     """
     Normalizes and validates a Pakistani mobile number.
-    Accepts: '03001234567', '+923001234567', '0300-1234567', '0300 1234567'.
+    Accepts: '03001234567', '+923001234567', '00923001234567', '0300-1234567', '0300 1234567'.
     
     Returns:
         Standard 11-digit string matching regex: ^03[0-9]{9}$
@@ -32,8 +33,10 @@ def normalize_pakistan_phone(phone: str) -> str:
     # Remove hyphens, spaces, parentheses, dots
     cleaned = re.sub(r"[\s\-\(\)\.]", "", cleaned)
 
-    # Convert international prefixes +92 or 92 to 0
-    if cleaned.startswith("+92"):
+    # Convert international prefixes 0092, +92, or 92 to 0
+    if cleaned.startswith("0092"):
+        cleaned = "0" + cleaned[4:]
+    elif cleaned.startswith("+92"):
         cleaned = "0" + cleaned[3:]
     elif cleaned.startswith("92") and len(cleaned) == 12:
         cleaned = "0" + cleaned[2:]
@@ -44,6 +47,7 @@ def normalize_pakistan_phone(phone: str) -> str:
         )
 
     return cleaned
+
 
 
 def generate_next_admission_number(conn: sqlite3.Connection, year: Optional[int] = None) -> str:
@@ -162,23 +166,16 @@ class StudentService:
         if student_data.guardian_whatsapp and str(student_data.guardian_whatsapp).strip():
             valid_whatsapp = normalize_pakistan_phone(student_data.guardian_whatsapp)
 
-        # 2. Admission Number Allocation
-        admission_no = student_data.admission_number
-        if not admission_no or not admission_no.strip():
-            admission_no = generate_next_admission_number(self.conn)
-        else:
-            admission_no = admission_no.strip()
-            # Check uniqueness
-            cursor = self.conn.cursor()
-            cursor.execute("SELECT id FROM students WHERE admission_number = ?;", (admission_no,))
-            if cursor.fetchone():
-                raise ValueError(f"Admission number '{admission_no}' is already registered.")
-
-        # 3. Foreign Key Existence Checks
+        # 2. Foreign Key Existence Checks & Session Name Extraction
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id FROM academic_sessions WHERE id = ?;", (session_id,))
-        if not cursor.fetchone():
+        cursor.execute("SELECT id, name FROM academic_sessions WHERE id = ?;", (session_id,))
+        sess_row = cursor.fetchone()
+        if not sess_row:
             raise ValueError(f"Academic session with id={session_id} does not exist.")
+
+        session_name = sess_row["name"] if isinstance(sess_row, sqlite3.Row) else sess_row[1]
+        year_match = re.search(r"\d{4}", session_name)
+        session_year = int(year_match.group(0)) if year_match else datetime.date.today().year
 
         cursor.execute("SELECT id FROM class_groups WHERE id = ? AND session_id = ?;", (class_group_id, session_id))
         if not cursor.fetchone():
@@ -187,8 +184,18 @@ class StudentService:
         if not enrollment_date:
             enrollment_date = datetime.date.today().isoformat()
 
-        # 4. Atomic Database Transaction
-        with self.conn:
+        # 3. Atomic Composite Transaction with immediate write lock
+        with transaction(self.conn):
+            # Admission Number Allocation inside exclusive transaction lock
+            admission_no = student_data.admission_number
+            if not admission_no or not admission_no.strip():
+                admission_no = generate_next_admission_number(self.conn, year=session_year)
+            else:
+                admission_no = admission_no.strip()
+                cursor.execute("SELECT id FROM students WHERE admission_number = ?;", (admission_no,))
+                if cursor.fetchone():
+                    raise ValueError(f"Admission number '{admission_no}' is already registered.")
+
             cursor.execute(
                 """
                 INSERT INTO students (
@@ -248,22 +255,16 @@ class StudentService:
     ) -> list[dict[str, Any]]:
         """
         Performs high-performance multi-field search across admission number, names,
-        and guardian mobile numbers.
+        Urdu script, and guardian mobile numbers with whitespace normalization.
         """
         cursor = self.conn.cursor()
+        clean_q = " ".join(query.strip().split()) if query else ""
+
         sql = """
         SELECT 
+            s.*,
             s.id AS student_id,
-            s.admission_number,
-            s.first_name,
-            s.last_name,
             TRIM(s.first_name || ' ' || COALESCE(s.last_name, '')) AS full_name,
-            s.urdu_name,
-            s.gender,
-            s.guardian_name,
-            s.guardian_urdu_name,
-            s.guardian_phone,
-            s.is_active,
             e.id AS enrollment_id,
             e.class_group_id,
             cg.name AS class_name,
@@ -277,48 +278,43 @@ class StudentService:
             e.status AS enrollment_status,
             e.custom_discount_amount
         FROM students s
-        LEFT JOIN enrollments e ON s.id = e.student_id
+        JOIN enrollments e ON s.id = e.student_id
         LEFT JOIN class_groups cg ON e.class_group_id = cg.id
         LEFT JOIN academic_sessions sess ON e.session_id = sess.id
-        WHERE 1=1
+        WHERE (:active_only = 0 OR s.is_active = 1)
         """
-        params: list[Any] = []
+        params: dict[str, Any] = {
+            "active_only": 1 if active_only else 0,
+            "session_id": session_id,
+            "class_group_id": class_group_id,
+            "q": clean_q,
+            "like_q": f"%{clean_q}%" if clean_q else "%",
+        }
 
-        if active_only:
-            sql += " AND s.is_active = 1"
+        if session_id is not None:
+            sql += " AND e.session_id = :session_id"
 
-        if session_id:
-            sql += " AND e.session_id = ?"
-            params.append(session_id)
+        if class_group_id is not None:
+            sql += " AND e.class_group_id = :class_group_id"
 
-        if class_group_id:
-            sql += " AND e.class_group_id = ?"
-            params.append(class_group_id)
-
-        clean_q = query.strip()
         if clean_q:
             sql += """
             AND (
-                s.admission_number LIKE ? OR
-                s.first_name LIKE ? OR
-                s.last_name LIKE ? OR
-                s.urdu_name LIKE ? OR
-                s.guardian_name LIKE ? OR
-                s.guardian_phone LIKE ? OR
-                e.roll_number LIKE ?
+                s.admission_number LIKE :like_q OR
+                s.first_name LIKE :like_q OR
+                s.last_name LIKE :like_q OR
+                s.urdu_name LIKE :like_q OR
+                s.guardian_name LIKE :like_q OR
+                s.guardian_phone LIKE :like_q OR
+                e.roll_number LIKE :like_q
             )
             """
-            like_pattern = f"%{clean_q}%"
-            params.extend([like_pattern] * 7)
 
         sql += " ORDER BY s.admission_number ASC;"
         cursor.execute(sql, params)
         rows = cursor.fetchall()
+        return [{k: r[k] for k in r.keys()} for r in rows]
 
-        results = []
-        for r in rows:
-            results.append({k: r[k] for k in r.keys()})
-        return results
 
     def get_student_by_id(self, student_id: int) -> Optional[dict[str, Any]]:
         """Retrieves a single student's profile and latest enrollment details."""
