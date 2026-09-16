@@ -20,6 +20,15 @@ if ROOT_DIR not in sys.path:
 
 from database import get_connection
 from services.backup_service import BackupService
+from ui import (
+    has_active_display,
+    DashboardView,
+    StudentView,
+    FeeView,
+    AttendanceView,
+    ExamView,
+    SettingsView,
+)
 
 
 def init_windows_dpi() -> None:
@@ -148,25 +157,56 @@ class ClassFellowApp(ctk.CTk):
         self.workspace_frame = ctk.CTkFrame(self, corner_radius=8, fg_color="#0F172A")
         self.workspace_frame.grid(row=1, column=1, sticky="nsew", padx=15, pady=15)
 
-        self.welcome_label = ctk.CTkLabel(
-            self.workspace_frame,
-            text="Welcome to ClassFellow",
-            font=ctk.CTkFont(size=24, weight="bold"),
-            text_color="#F8FAFC"
-        )
-        self.welcome_label.pack(pady=40)
+        self.views = {}
+        self.current_view = None
+        self.view_classes = {
+            "dashboard": DashboardView,
+            "students": StudentView,
+            "fees": FeeView,
+            "attendance": AttendanceView,
+            "examinations": ExamView,
+            "settings": SettingsView,
+        }
 
-        self.sub_label = ctk.CTkLabel(
-            self.workspace_frame,
-            text="High-reliability management software for schools & tuition academies in Punjab.",
-            font=ctk.CTkFont(size=14),
-            text_color="#94A3B8"
+        # Navigate to Dashboard workspace by default
+        self.navigate_to("dashboard")
+
+    def navigate_to(self, module_key: str, **kwargs) -> bool:
+        """
+        Dynamically swaps active workspace view inside self.workspace_frame.
+        Enforces commercial feature-flag entitlements from config/modules.json.
+        """
+        active_modules = self.config.get("modules", {})
+        # Dashboard and Settings are core views; others check active module feature flags
+        if module_key not in ("dashboard", "settings"):
+            if module_key in active_modules and not active_modules[module_key]:
+                logging.getLogger(__name__).warning(f"Navigation blocked: {module_key} is unlicensed.")
+                return False
+
+        if module_key not in self.view_classes:
+            return False
+
+        if module_key not in self.views:
+            view_cls = self.view_classes[module_key]
+            self.views[module_key] = view_cls(self.workspace_frame, self)
+
+        target_view = self.views[module_key]
+
+        if self.current_view and self.current_view != target_view:
+            self.current_view.pack_forget()
+
+        target_view.pack(fill="both", expand=True)
+        self.current_view = target_view
+        target_view.on_show(**kwargs)
+
+        self.status_label.configure(
+            text=f"Active Workspace: {module_key.capitalize()} • SQLite WAL Mode Active"
         )
-        self.sub_label.pack(pady=10)
+        return True
 
     def _on_navigate(self, module_key: str) -> None:
         """Handles navigation sidebar button clicks."""
-        self.sub_label.configure(text=f"Active Subsystem: {module_key.capitalize()}")
+        self.navigate_to(module_key)
 
     def _run_async_startup_backup(self) -> None:
         """Executes Tier 1 daily backup and retention pruning in background."""
@@ -194,6 +234,9 @@ class ClassFellowApp(ctk.CTk):
 
 def main() -> None:
     init_windows_dpi()
+    if not has_active_display():
+        print("No active display detected. Headless environment active.")
+        return
     app = ClassFellowApp()
     app.mainloop()
 

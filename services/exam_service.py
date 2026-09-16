@@ -596,6 +596,7 @@ class ExamService:
                     attendance_percentage=s["attendance_percentage"],
                     teacher_remarks=s["teacher_remarks"],
                     teacher_urdu_remarks=s["teacher_urdu_remarks"],
+                    enrollment_id=s["enrollment_id"],
                 )
             )
 

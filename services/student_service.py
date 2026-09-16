@@ -445,3 +445,12 @@ class StudentService:
                     student_data.id
                 )
             )
+
+    def update_student_status(self, student_id: int, is_active: bool) -> None:
+        """Updates the active status flag of a student."""
+        with self.conn:
+            self.conn.execute(
+                "UPDATE students SET is_active = ?, updated_at = DATETIME('now') WHERE id = ?;",
+                (1 if is_active else 0, student_id)
+            )
+

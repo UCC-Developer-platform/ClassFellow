@@ -223,5 +223,6 @@ class StudentReportCardDTO:
     attendance_percentage: float
     teacher_remarks: Optional[str] = None
     teacher_urdu_remarks: Optional[str] = None
+    enrollment_id: Optional[int] = None
 
 
