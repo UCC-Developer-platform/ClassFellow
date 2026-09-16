@@ -115,7 +115,7 @@ class ClassFellowApp(ctk.CTk):
             ("⚙️ Settings", "settings"),
         ]
 
-        active_modules = self.config.get("modules", {}).get("modules", {})
+        active_modules = self.config.get("modules", {})
         for label, mod_key in nav_items:
             # Check dynamic module entitlement
             if mod_key in active_modules and not active_modules[mod_key]:
