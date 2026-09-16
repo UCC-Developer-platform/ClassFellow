@@ -144,3 +144,84 @@ class AttendanceSummaryDTO:
     late_days: int
     percentage: float
 
+
+# --- Examination & Report Card DTOs ---
+@dataclass(frozen=True)
+class SubjectDTO:
+    id: Optional[int] = None
+    name: str = ""
+    urdu_name: Optional[str] = None
+    code: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class ExamDTO:
+    id: Optional[int] = None
+    session_id: int = 0
+    name: str = ""
+    exam_type: str = "TermExam"  # 'MonthlyTest', 'TermExam', 'AnnualExam', 'MockTest'
+    start_date: str = ""
+    end_date: str = ""
+    is_published: bool = False
+
+
+@dataclass(frozen=True)
+class ExamSubjectDTO:
+    id: Optional[int] = None
+    exam_id: int = 0
+    class_group_id: int = 0
+    subject_id: int = 0
+    subject_name: str = ""
+    maximum_marks: Decimal = Decimal("100.00")
+    passing_marks: Decimal = Decimal("33.00")
+    weightage_percent: Decimal = Decimal("100.00")
+    exam_date: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class GradingTierDTO:
+    id: Optional[int] = None
+    session_id: int = 0
+    grade_name: str = ""
+    min_percentage: Decimal = Decimal("0.00")
+    max_percentage: Decimal = Decimal("100.00")
+    gpa_point: Decimal = Decimal("0.0")
+    remarks_en: Optional[str] = None
+    remarks_ur: Optional[str] = None
+    is_passing: bool = True
+
+
+@dataclass(frozen=True)
+class SubjectResultDTO:
+    subject_name: str
+    subject_urdu_name: Optional[str]
+    maximum_marks: Decimal
+    passing_marks: Decimal
+    marks_obtained: Decimal
+    is_absent: bool
+    is_passed: bool
+    grade: str
+
+
+@dataclass(frozen=True)
+class StudentReportCardDTO:
+    student_name: str
+    urdu_name: Optional[str]
+    roll_number: Optional[str]
+    class_name: str
+    admission_number: str
+    exam_name: str
+    session_name: str
+    results: list[SubjectResultDTO]
+    total_maximum: Decimal
+    total_obtained: Decimal
+    percentage: Decimal
+    final_grade: str
+    gpa_point: Decimal
+    rank_in_class: int
+    total_students_in_class: int
+    attendance_percentage: float
+    teacher_remarks: Optional[str] = None
+    teacher_urdu_remarks: Optional[str] = None
+
+

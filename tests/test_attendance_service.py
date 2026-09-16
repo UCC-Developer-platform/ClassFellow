@@ -91,7 +91,8 @@ def test_setup(student_service):
 def test_migration_v2_creates_attendance_and_batch_tables(db_connection):
     """Verifies that migration v2 creates batch_sessions and attendance_records."""
     version = migrate_to_latest(db_connection)
-    assert version == 2
+    assert version >= 2
+
 
     cursor = db_connection.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")

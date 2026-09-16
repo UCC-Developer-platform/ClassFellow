@@ -10,7 +10,7 @@ import sqlite3
 from typing import Callable
 from database import get_schema_version, set_schema_version
 
-SCHEMA_VERSION_CURRENT = 2
+SCHEMA_VERSION_CURRENT = 3
 
 
 def migration_v1_initial_schema(conn: sqlite3.Connection) -> None:
@@ -223,9 +223,117 @@ def migration_v2_attendance_schema(conn: sqlite3.Connection) -> None:
     set_schema_version(conn, 2)
 
 
+def migration_v3_exam_schema(conn: sqlite3.Connection) -> None:
+    """
+    Executes Migration v3: Establishes subjects, exams, exam_subjects,
+    grading_tiers, and marks tables as specified in CF-SRS-05.
+    """
+    with conn:
+        # 1. Master Subject Definitions
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS subjects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            urdu_name TEXT,
+            code TEXT UNIQUE,
+            created_at TEXT NOT NULL DEFAULT (DATETIME('now'))
+        );
+        """)
+
+        # 2. Master Examination Cycles
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS exams (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            exam_type TEXT NOT NULL CHECK (exam_type IN ('MonthlyTest', 'TermExam', 'AnnualExam', 'MockTest')),
+            start_date TEXT NOT NULL,
+            end_date TEXT NOT NULL,
+            is_published INTEGER NOT NULL DEFAULT 0 CHECK (is_published IN (0, 1)),
+            created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+            FOREIGN KEY (session_id) REFERENCES academic_sessions(id) ON DELETE RESTRICT
+        );
+        """)
+
+        # 3. Dynamic Class-Specific Subject Examination Configuration
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS exam_subjects (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            exam_id INTEGER NOT NULL,
+            class_group_id INTEGER NOT NULL,
+            subject_id INTEGER NOT NULL,
+            maximum_marks TEXT NOT NULL,
+            passing_marks TEXT NOT NULL,
+            weightage_percent TEXT NOT NULL DEFAULT '100.00',
+            exam_date TEXT,
+            created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+            FOREIGN KEY (exam_id) REFERENCES exams(id) ON DELETE CASCADE,
+            FOREIGN KEY (class_group_id) REFERENCES class_groups(id) ON DELETE RESTRICT,
+            FOREIGN KEY (subject_id) REFERENCES subjects(id) ON DELETE RESTRICT,
+            UNIQUE(exam_id, class_group_id, subject_id)
+        );
+        """)
+
+        # 4. Configurable Grading Scales
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS grading_tiers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            grade_name TEXT NOT NULL,
+            min_percentage TEXT NOT NULL,
+            max_percentage TEXT NOT NULL,
+            gpa_point TEXT NOT NULL DEFAULT '0.0',
+            remarks_en TEXT,
+            remarks_ur TEXT,
+            is_passing INTEGER NOT NULL DEFAULT 1 CHECK (is_passing IN (0, 1)),
+            FOREIGN KEY (session_id) REFERENCES academic_sessions(id) ON DELETE CASCADE,
+            UNIQUE(session_id, grade_name)
+        );
+        """)
+
+        # 5. Individual Student Marks Entry Ledger
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS marks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            exam_subject_id INTEGER NOT NULL,
+            enrollment_id INTEGER NOT NULL,
+            marks_obtained TEXT NOT NULL,
+            is_absent INTEGER NOT NULL DEFAULT 0 CHECK (is_absent IN (0, 1)),
+            teacher_remarks TEXT,
+            recorded_by_user_id INTEGER,
+            created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+            updated_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+            FOREIGN KEY (exam_subject_id) REFERENCES exam_subjects(id) ON DELETE CASCADE,
+            FOREIGN KEY (enrollment_id) REFERENCES enrollments(id) ON DELETE RESTRICT,
+            UNIQUE(exam_subject_id, enrollment_id)
+        );
+        """)
+
+        # 6. Performance Indexes
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_exam_subjects_lookup ON exam_subjects(exam_id, class_group_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_marks_enrollment ON marks(enrollment_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_marks_exam_subject ON marks(exam_subject_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_grading_tiers_session ON grading_tiers(session_id);")
+
+        # Seed baseline subjects
+        conn.execute("""
+        INSERT OR IGNORE INTO subjects (name, urdu_name, code)
+        VALUES
+            ('Mathematics', 'ریاضی', 'MATH'),
+            ('English', 'انگریزی', 'ENG'),
+            ('Urdu', 'اردو', 'URDU'),
+            ('Science', 'جنرل سائنس', 'SCI'),
+            ('Islamiat', 'اسلامیات', 'ISL'),
+            ('Pakistan Studies', 'مطالعہ پاکستان', 'PST');
+        """)
+
+    set_schema_version(conn, 3)
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: migration_v1_initial_schema,
     2: migration_v2_attendance_schema,
+    3: migration_v3_exam_schema,
 }
 
 
@@ -241,4 +349,5 @@ def migrate_to_latest(conn: sqlite3.Connection) -> int:
         if ver in MIGRATIONS:
             MIGRATIONS[ver](conn)
     return get_schema_version(conn)
+
 
