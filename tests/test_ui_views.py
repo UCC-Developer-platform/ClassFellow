@@ -286,28 +286,6 @@ def test_attendance_view_roster_and_whatsapp_generation(populated_ui_db):
     assert "message_text" in wa_payload
     assert "محترم والدین" in wa_payload["message_text"]
 
-    # 4. Verify WhatsAppNotificationModal binding and action buttons
-    from ui.attendance_view import WhatsAppNotificationModal
-    if has_active_display():
-        import customtkinter as ctk
-        root = ctk.CTk()
-        root.withdraw()
-        try:
-            modal = WhatsAppNotificationModal(root, wa_payload)
-            assert modal.message_label.cget("text") == wa_payload["message_text"]
-            assert modal.payload["whatsapp_url"] == wa_payload["whatsapp_url"]
-
-            # Test clipboard copy action
-            modal._copy_message()
-            assert "copied" in modal.status_lbl.cget("text").lower()
-
-            # Test browser launch mock
-            with patch("webbrowser.open") as mock_open:
-                modal._open_whatsapp_url()
-                mock_open.assert_called_once_with(wa_payload["whatsapp_url"])
-        finally:
-            root.destroy()
-
 
 def test_exam_view_results_and_bounds_validation(populated_ui_db):
     """Verifies exam results calculation and score upper-bound enforcement."""
@@ -389,6 +367,24 @@ def test_gui_workspace_swapping_live_window(populated_ui_db):
             # Swap to attendance
             assert app.navigate_to("attendance") is True
             assert app.current_view == app.views.get("attendance")
+
+            # Verify WhatsAppNotificationModal inside active app
+            from ui.attendance_view import WhatsAppNotificationModal
+            wa_payload = {
+                "student_name": "Usman",
+                "guardian_phone": "03001234567",
+                "message_text": "محترم والدین، اطلاع دی جاتی ہے کہ بچہ غیر حاضر ہے۔",
+                "whatsapp_url": "https://wa.me/923001234567?text=test"
+            }
+            modal = WhatsAppNotificationModal(app, wa_payload)
+            assert modal.message_label.cget("text") == wa_payload["message_text"]
+            assert modal.payload["whatsapp_url"] == wa_payload["whatsapp_url"]
+            modal._copy_message()
+            assert "copied" in modal.status_lbl.cget("text").lower()
+            with patch("webbrowser.open") as mock_open:
+                modal._open_whatsapp_url()
+                mock_open.assert_called_once_with(wa_payload["whatsapp_url"])
+            modal.close()
 
             # Swap to examinations
             assert app.navigate_to("examinations") is True
