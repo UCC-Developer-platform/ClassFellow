@@ -1,0 +1,97 @@
+# ==========================================
+# ClassFellow - Production .gitignore
+# ==========================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller / Executable Builds
+*.manifest
+*.spec
+
+# Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Local SQLite Databases & Data Files
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.sqlite3
+data/backups/
+*.db
+*.db-wal
+*.db-shm
+
+# Application Logs
+logs/
+*.log
+
+# Unit Test & Coverage Caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.tox/
+
+# Local Environment & Secrets
+.env
+.env.*
+!.env.example
+credentials.json
+token.json
+client_secret*.json
+
+# Generated Reports & PDFs
+*.pdf
+output/
+reports_output/
+
+# IDEs & Text Editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# Operating System Files
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.AppleDouble
+.LSOverride

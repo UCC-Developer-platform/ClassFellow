@@ -1,0 +1,23 @@
+# ==========================================
+# ClassFellow - Pinned Dependencies
+# ==========================================
+
+# Modern Desktop UI
+customtkinter>=5.2.0
+
+# Document & Report Generation
+reportlab>=4.1.0
+
+# Urdu & Arabic Ligature Reshaping & BiDi
+arabic-reshaper>=3.0.0
+python-bidi>=0.4.2
+
+# Currency & Numbers in Words
+num2words>=0.5.13
+
+# Excel & Data Exchange
+openpyxl>=3.1.2
+
+# Automated Testing & Coverage
+pytest>=8.0.0
+pytest-cov>=4.1.0
