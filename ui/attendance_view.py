@@ -6,6 +6,7 @@ monthly attendance summary, and bilingual WhatsApp absence notification links.
 """
 
 import logging
+import webbrowser
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import customtkinter as ctk
@@ -282,7 +283,7 @@ class AttendanceView(BaseView):
             self.show_error("Save Failed", str(exc))
 
     def _send_whatsapp_alert(self, enrollment_id: int, student_name: str, phone: str, status: str) -> None:
-        """Generates WhatsApp URL payload and opens or shows URL to operator."""
+        """Generates WhatsApp URL payload and displays formatted modal with copy and browser launch."""
         if status != "Absent":
             self.show_info("Notice", f"{student_name} is marked as '{status}'. Absence notices are for Absent students.")
             return
@@ -294,9 +295,115 @@ class AttendanceView(BaseView):
                 date=att_date,
                 institution_name="ClassFellow Grammar School"
             )
-            self.show_info(
-                "WhatsApp Notice Generated",
-                f"URL for {payload['guardian_phone']}:\n\n{payload['whatsapp_url']}"
-            )
+            WhatsAppNotificationModal(self, payload)
         except Exception as exc:
             self.show_error("WhatsApp Alert Error", str(exc))
+
+
+class WhatsAppNotificationModal(BaseModal):
+    """Bilingual absence notification modal with direct browser launch and copy action."""
+
+    def __init__(self, parent, payload: Dict[str, str]):
+        super().__init__(parent, title="WhatsApp Absence Notification", width=560, height=480)
+        self.payload = payload
+
+        # Subtitle / Guardian Info
+        info_frame = ctk.CTkFrame(self.card, fg_color="transparent")
+        info_frame.pack(fill="x", padx=16, pady=(0, 10))
+
+        student_name = payload.get("student_name", "Student")
+        guardian_phone = payload.get("guardian_phone", "—")
+        ctk.CTkLabel(
+            info_frame,
+            text=f"Student: {student_name}   |   Guardian: {guardian_phone}",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=THEME_COLORS["brand_primary"],
+            anchor="w"
+        ).pack(anchor="w")
+
+        # Message Preview Area bound to payload["message_text"]
+        message_text = payload.get("message_text", "")
+
+        preview_scroll = ctk.CTkScrollableFrame(
+            self.card, fg_color=THEME_COLORS["bg_app"], corner_radius=6, height=240
+        )
+        preview_scroll.pack(fill="both", expand=True, padx=16, pady=(0, 10))
+
+        self.message_label = ctk.CTkLabel(
+            preview_scroll,
+            text=message_text,
+            wraplength=480,
+            font=ctk.CTkFont(size=12),
+            text_color=THEME_COLORS["text_primary"],
+            justify="left",
+            anchor="nw"
+        )
+        self.message_label.pack(fill="both", expand=True, padx=12, pady=12)
+
+        # Status / Feedback label (e.g. "Message copied to clipboard!")
+        self.status_lbl = ctk.CTkLabel(
+            self.card,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=THEME_COLORS["brand_primary"]
+        )
+        self.status_lbl.pack(anchor="w", padx=16, pady=(0, 6))
+
+        # Action Buttons Container
+        btn_frame = ctk.CTkFrame(self.card, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=16, pady=(0, 16))
+
+        # 1. Open in Browser / WhatsApp Web
+        self.btn_open = ctk.CTkButton(
+            btn_frame,
+            text="🚀 Open WhatsApp",
+            fg_color=THEME_COLORS["brand_primary"],
+            hover_color=THEME_COLORS["brand_accent"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self._open_whatsapp_url
+        )
+        self.btn_open.pack(side="left", padx=(0, 8))
+
+        # 2. Copy Message
+        self.btn_copy = ctk.CTkButton(
+            btn_frame,
+            text="📋 Copy Message",
+            fg_color=THEME_COLORS["bg_card"],
+            hover_color=THEME_COLORS["border_color"],
+            border_width=1,
+            border_color=THEME_COLORS["border_color"],
+            text_color=THEME_COLORS["text_primary"],
+            font=ctk.CTkFont(size=12),
+            command=self._copy_message
+        )
+        self.btn_copy.pack(side="left", padx=(0, 8))
+
+        # 3. Dismiss
+        self.btn_close = ctk.CTkButton(
+            btn_frame,
+            text="Dismiss",
+            fg_color="transparent",
+            hover_color=THEME_COLORS["border_color"],
+            text_color=THEME_COLORS["text_secondary"],
+            font=ctk.CTkFont(size=12),
+            width=80,
+            command=self.close
+        )
+        self.btn_close.pack(side="right")
+
+    def _open_whatsapp_url(self) -> None:
+        """Launches the wa.me deep-link in default web browser."""
+        url = self.payload.get("whatsapp_url", "")
+        if url:
+            webbrowser.open(url)
+            self.status_lbl.configure(text="Opening WhatsApp in default browser...")
+
+    def _copy_message(self) -> None:
+        """Copies message text to OS clipboard."""
+        msg = self.payload.get("message_text", "")
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(msg)
+            self.status_lbl.configure(text="Message copied to clipboard!")
+        except Exception:
+            self.status_lbl.configure(text="Failed to copy message.")

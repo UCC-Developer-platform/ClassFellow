@@ -283,6 +283,30 @@ def test_attendance_view_roster_and_whatsapp_generation(populated_ui_db):
     assert "03001234567" in wa_payload["guardian_phone"]
     assert "wa.me/923001234567" in wa_payload["whatsapp_url"]
     assert "Usman" in wa_payload["whatsapp_url"]
+    assert "message_text" in wa_payload
+    assert "محترم والدین" in wa_payload["message_text"]
+
+    # 4. Verify WhatsAppNotificationModal binding and action buttons
+    from ui.attendance_view import WhatsAppNotificationModal
+    if has_active_display():
+        import customtkinter as ctk
+        root = ctk.CTk()
+        root.withdraw()
+        try:
+            modal = WhatsAppNotificationModal(root, wa_payload)
+            assert modal.message_label.cget("text") == wa_payload["message_text"]
+            assert modal.payload["whatsapp_url"] == wa_payload["whatsapp_url"]
+
+            # Test clipboard copy action
+            modal._copy_message()
+            assert "copied" in modal.status_lbl.cget("text").lower()
+
+            # Test browser launch mock
+            with patch("webbrowser.open") as mock_open:
+                modal._open_whatsapp_url()
+                mock_open.assert_called_once_with(wa_payload["whatsapp_url"])
+        finally:
+            root.destroy()
 
 
 def test_exam_view_results_and_bounds_validation(populated_ui_db):

@@ -131,7 +131,6 @@ class ClassFellowApp(ctk.CTk):
             ("💳 Fees & Receipts", "fees"),
             ("🗓️ Attendance", "attendance"),
             ("📝 Examinations", "examinations"),
-            ("📄 Reports", "reports"),
             ("⚙️ Settings", "settings"),
         ]
 
