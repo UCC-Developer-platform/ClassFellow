@@ -9,6 +9,8 @@ import os
 import sys
 import json
 import ctypes
+import threading
+import logging
 import customtkinter as ctk
 
 # Ensure root directory is in sys.path
@@ -17,6 +19,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from database import get_connection
+from services.backup_service import BackupService
 
 
 def init_windows_dpi() -> None:
@@ -72,9 +75,17 @@ class ClassFellowApp(ctk.CTk):
         self.config = load_configuration()
 
         # Verify database connection
+        self.db_path = db_path
         self.db_conn = get_connection(db_path) if db_path else get_connection()
+        self.backup_service = BackupService(self.db_conn, self.db_path)
 
         self._build_shell_ui()
+
+        # Lifecycle Hook: Asynchronous startup backup & 30-day retention pruning
+        threading.Thread(target=self._run_async_startup_backup, daemon=True).start()
+
+        # Lifecycle Hook: Clean window close with bounded shutdown backup
+        self.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def _build_shell_ui(self) -> None:
         """Constructs baseline application shell: Sidebar + Header + Workspace."""
@@ -156,6 +167,29 @@ class ClassFellowApp(ctk.CTk):
     def _on_navigate(self, module_key: str) -> None:
         """Handles navigation sidebar button clicks."""
         self.sub_label.configure(text=f"Active Subsystem: {module_key.capitalize()}")
+
+    def _run_async_startup_backup(self) -> None:
+        """Executes Tier 1 daily backup and retention pruning in background."""
+        try:
+            if hasattr(self, "backup_service") and self.backup_service:
+                self.backup_service.run_startup_backup()
+        except Exception as exc:
+            logging.getLogger(__name__).warning(f"Startup backup error: {exc}")
+
+    def _on_closing(self) -> None:
+        """Handles graceful window shutdown with bounded backup and connection cleanup."""
+        try:
+            if hasattr(self, "backup_service") and self.backup_service:
+                self.backup_service.run_shutdown_backup()
+        except Exception as exc:
+            logging.getLogger(__name__).warning(f"Shutdown backup error: {exc}")
+        finally:
+            try:
+                if hasattr(self, "db_conn") and self.db_conn:
+                    self.db_conn.close()
+            except Exception:
+                pass
+            self.destroy()
 
 
 def main() -> None:
