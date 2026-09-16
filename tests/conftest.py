@@ -21,14 +21,23 @@ from database import get_connection
 
 @pytest.fixture
 def temp_db_path(tmp_path):
-    """Returns a temporary database file path for integration tests."""
+    """Returns a temporary database file path for isolated disk/WAL tests."""
     db_file = tmp_path / "test_classfellow.db"
     return str(db_file)
 
 
 @pytest.fixture
 def db_connection(temp_db_path):
-    """Provides a fresh, pragma-configured SQLite connection using a temporary file."""
+    """Provides a fresh, pragma-configured SQLite connection using a temporary file (full WAL support)."""
     conn = get_connection(temp_db_path)
     yield conn
     conn.close()
+
+
+@pytest.fixture
+def memory_db_connection():
+    """Provides an ultra-fast in-memory SQLite connection with Decimal converters and foreign keys."""
+    conn = get_connection(":memory:")
+    yield conn
+    conn.close()
+

@@ -83,3 +83,23 @@ def test_online_backup_api(db_connection, tmp_path):
     cur.execute("SELECT name FROM sample;")
     assert cur.fetchone()[0] == "ClassFellow"
     verify_conn.close()
+
+
+def test_memory_fixture_decimal_and_foreign_keys(memory_db_connection):
+    """Verifies that the in-memory fixture properly enforces foreign keys and handles Decimals."""
+    cursor = memory_db_connection.cursor()
+    
+    # Check foreign keys pragma
+    cursor.execute("PRAGMA foreign_keys;")
+    assert cursor.fetchone()[0] == 1
+
+    # Verify Decimal serialization
+    cursor.execute("CREATE TABLE fee_test (id INTEGER PRIMARY KEY, fee DECIMAL);")
+    test_fee = Decimal("12500.50")
+    cursor.execute("INSERT INTO fee_test (fee) VALUES (?);", (test_fee,))
+    
+    cursor.execute("SELECT fee FROM fee_test WHERE id = 1;")
+    retrieved = cursor.fetchone()[0]
+    assert isinstance(retrieved, Decimal)
+    assert retrieved == test_fee
+
