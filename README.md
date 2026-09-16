@@ -36,16 +36,20 @@ classfellow/
 │   ├── student_service.py
 │   ├── fee_service.py
 │   ├── attendance_service.py
+│   ├── exam_service.py
 │   └── backup_service.py
 ├── ui/                         # CustomTkinter GUI screens, forms & modal dialogs
 ├── reports/                    # ReportLab A4 PDF voucher & report generators
 │   └── urdu_formatter.py       # Arabic/Urdu ligature reshaper pipeline
+├── scripts/                    # Utility & database seeding scripts
+│   └── seed_demo_data.py
 ├── tests/                      # Automated pytest unit & integration tests
 ├── config/                     # Settings, JSON theme tokens & module flags
 ├── data/                       # Local SQLite database & daily backups
 │   └── backups/
 ├── docs/srs/                   # Formal Software Requirements Specifications
 ├── .github/workflows/          # Automated GitHub Actions CI/CD pipeline
+├── classfellow.spec            # PyInstaller Windows 64-bit build specification
 ├── requirements.txt            # Pinned production & development dependencies
 └── README.md
 ```
@@ -96,6 +100,48 @@ Formal specifications are documented in [`docs/srs/`](docs/srs/):
    ```bash
    pytest
    ```
+
+5. Launch application:
+   ```bash
+   python app/app.py
+   ```
+
+---
+
+## 🧪 Demo Pilot Data Seeding
+
+ClassFellow includes a self-contained CLI utility to seed a realistic Punjab educational institution pilot dataset:
+- **1 Academic Session**: 2026-2027 (active)
+- **3 Class Groups**: Class 9 - Green (`SchoolClass`), Class 10 - Gold (`SchoolClass`), Tuition Batch - 9th Physics (`AcademyBatch`)
+- **15 Enrolled Students**: Bilingual English/Urdu names and normalized mobile numbers (`0300...`)
+- **Monthly Billing Cycle**: 15 invoices for `2026-04` (5 Paid, 5 Partially Paid, 5 Unpaid Defaulters)
+- **5-Day Class Attendance**: Roster exception logs (Present, Absent, Late, Leave)
+- **Examination Subsystem**: First Term Exam 2026 with BISE Punjab grading tiers and class ranks
+
+```bash
+# Seed default database (data/classfellow.db)
+python scripts/seed_demo_data.py --reset
+
+# Seed custom database location
+python scripts/seed_demo_data.py --db-path data/pilot_school.db --reset
+```
+
+---
+
+## 📦 Standalone Windows Executable Build (.exe)
+
+Package ClassFellow into a standalone Windows 64-bit windowed executable using PyInstaller:
+
+```bash
+# Build standalone executable from classfellow.spec
+pyinstaller classfellow.spec
+```
+
+The resulting standalone executable will be generated in `dist/ClassFellow.exe`, bundled with:
+- `assets/fonts/` (Urdu and Unicode TrueType fonts)
+- `config/` (`theme.json` and commercial tier `modules.json`)
+- CustomTkinter embedded theme json tokens and assets
+- All domain services, ReportLab PDF generators, and SQLite adapters
 
 ---
 

@@ -29,6 +29,7 @@ MANIFEST
 # PyInstaller / Executable Builds
 *.manifest
 *.spec
+!classfellow.spec
 
 # Virtual Environments
 .venv/
