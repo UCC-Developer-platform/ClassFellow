@@ -5,13 +5,16 @@ Provides student registry search, read-only tabular records,
 and modal dialog for new student admission mutations.
 """
 
+import os
 import logging
 from decimal import Decimal
-from typing import Optional, List, Dict, Any
+from typing import Dict, Any, Optional, List
+from tkinter import filedialog
 import customtkinter as ctk
 
 from models import StudentDTO
 from services.student_service import StudentService
+from services.importer_service import StudentImporterService
 from ui.base_view import BaseView, BaseModal, THEME_COLORS
 
 logger = logging.getLogger(__name__)
@@ -23,6 +26,7 @@ class StudentView(BaseView):
     def __init__(self, parent, app, **kwargs):
         super().__init__(parent, app, **kwargs)
         self.student_service = StudentService(self.db_conn) if self.db_conn else None
+        self.importer_service = StudentImporterService(self.db_conn) if self.db_conn else None
 
         self._build_ui()
         self.refresh_data()
@@ -35,7 +39,9 @@ class StudentView(BaseView):
             subtitle="Manage student identities, guardian contacts, enrollments, and statuses",
             actions=[
                 ("➕ New Admission", self._open_admission_modal, self.colors["brand_primary"]),
-                ("🔄 Refresh", self.refresh_data, self.colors["brand_accent"]),
+                ("📥 Import Excel", self._open_import_modal, self.colors["brand_accent"]),
+                ("📄 Template", self._export_template, self.colors["border_color"]),
+                ("🔄 Refresh", self.refresh_data, self.colors["border_color"]),
             ],
         )
 
@@ -234,6 +240,35 @@ class StudentView(BaseView):
         """Presents focus-trapped student admission dialog."""
         StudentAdmissionModal(self)
 
+    def _open_import_modal(self) -> None:
+        """Presents Excel/CSV bulk student ingestion dialog."""
+        StudentImportModal(self)
+
+    def _export_template(self) -> None:
+        """Exports standardized blank Excel template for bulk student ingestion."""
+        if not self.importer_service:
+            self.show_error("Service Error", "Student importer service is not initialized.")
+            return
+
+        dest_path = filedialog.asksaveasfilename(
+            title="Save Student Import Template",
+            defaultextension=".xlsx",
+            filetypes=[("Excel Workbooks", "*.xlsx"), ("All Files", "*.*")],
+            initialfile="ClassFellow_Student_Import_Template.xlsx"
+        )
+        if not dest_path:
+            return
+
+        try:
+            saved_path = self.importer_service.generate_excel_template(dest_path)
+            self.show_info(
+                "Template Exported",
+                f"Student roster Excel template generated successfully:\n\n{saved_path}"
+            )
+        except Exception as exc:
+            logger.error(f"Failed to export template: {exc}", exc_info=True)
+            self.show_error("Export Failed", str(exc))
+
 
 # =============================================================================
 # Modal Dialog: New Student Admission
@@ -393,3 +428,263 @@ class StudentAdmissionModal(BaseModal):
 
         except Exception as exc:
             self.parent_view.show_error("Registration Failed", str(exc))
+
+
+# =============================================================================
+# Modal Dialog: Bulk Student Import
+# =============================================================================
+
+class StudentImportModal(BaseModal):
+    """Modal dialog to configure and execute bulk student ingestion from Excel/CSV."""
+
+    def __init__(self, parent_view: StudentView):
+        super().__init__(
+            parent_view,
+            title="Bulk Student Import (Excel / CSV)",
+            width=560,
+            height=490
+        )
+        self.parent_view = parent_view
+        self.importer_service = parent_view.importer_service
+
+        self._build_form()
+
+    def _build_form(self) -> None:
+        content = ctk.CTkFrame(self.card, fg_color="transparent")
+        content.pack(fill="both", expand=True, padx=16, pady=8)
+
+        # 1. File Selection
+        ctk.CTkLabel(
+            content, text="Spreadsheet File (.xlsx, .csv) *:", font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", pady=(0, 2))
+
+        file_box = ctk.CTkFrame(content, fg_color="transparent")
+        file_box.pack(fill="x", pady=(0, 10))
+
+        self.file_entry = ctk.CTkEntry(
+            file_box, placeholder_text="Select an Excel or CSV file...", font=ctk.CTkFont(size=12), width=360
+        )
+        self.file_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        btn_browse = ctk.CTkButton(
+            file_box,
+            text="📁 Browse...",
+            width=95,
+            fg_color=THEME_COLORS["border_color"],
+            hover_color=THEME_COLORS["brand_accent"],
+            command=self._browse_file
+        )
+        btn_browse.pack(side="right")
+
+        # 2. Target Class Group Selection
+        ctk.CTkLabel(
+            content, text="Target Class / Batch *:", font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", pady=(0, 2))
+
+        self.classes_map: Dict[str, int] = {}
+        if self.parent_view.db_conn:
+            cur = self.parent_view.db_conn.cursor()
+            cur.execute("SELECT id, name, section_or_batch FROM class_groups ORDER BY name, section_or_batch;")
+            for r in cur.fetchall():
+                label = f"{r[1]} ({r[2]})"
+                self.classes_map[label] = r[0]
+
+        class_opts = list(self.classes_map.keys()) or ["No Classes Found"]
+        self.class_var = ctk.StringVar(value=class_opts[0])
+        self.class_menu = ctk.CTkOptionMenu(content, values=class_opts, variable=self.class_var, width=320)
+        self.class_menu.pack(anchor="w", pady=(0, 10))
+
+        # 3. Target Academic Session Selection
+        ctk.CTkLabel(
+            content, text="Target Academic Session *:", font=ctk.CTkFont(size=12, weight="bold")
+        ).pack(anchor="w", pady=(0, 2))
+
+        self.sessions_map: Dict[str, int] = {}
+        if self.parent_view.db_conn:
+            cur = self.parent_view.db_conn.cursor()
+            cur.execute("SELECT id, name FROM academic_sessions WHERE is_active = 1 ORDER BY name DESC;")
+            for r in cur.fetchall():
+                self.sessions_map[r[1]] = r[0]
+
+        sess_opts = list(self.sessions_map.keys()) or ["No Active Sessions"]
+        self.sess_var = ctk.StringVar(value=sess_opts[0])
+        self.sess_menu = ctk.CTkOptionMenu(content, values=sess_opts, variable=self.sess_var, width=320)
+        self.sess_menu.pack(anchor="w", pady=(0, 12))
+
+        # Info Callout
+        info_card = ctk.CTkFrame(content, fg_color=THEME_COLORS["bg_app"], corner_radius=6)
+        info_card.pack(fill="x", pady=(0, 16))
+        ctk.CTkLabel(
+            info_card,
+            text="💡 Tip: Mobile numbers are automatically normalized to 03XXXXXXXXX. Empty admission numbers are generated sequentially (CF-YYYY-XXXX).",
+            font=ctk.CTkFont(size=11),
+            text_color=THEME_COLORS["text_secondary"],
+            wraplength=480,
+            justify="left"
+        ).pack(padx=12, pady=8)
+
+        # Action Buttons
+        btn_box = ctk.CTkFrame(self.card, fg_color="transparent")
+        btn_box.pack(fill="x", padx=16, pady=(0, 16))
+
+        btn_cancel = ctk.CTkButton(
+            btn_box, text="Cancel", command=self.close, fg_color=THEME_COLORS["border_color"], width=90
+        )
+        btn_cancel.pack(side="right", padx=6)
+
+        btn_import = ctk.CTkButton(
+            btn_box,
+            text="📥 Import Students",
+            command=self._submit_import,
+            fg_color=THEME_COLORS["brand_primary"],
+            hover_color=THEME_COLORS["brand_accent"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+            width=140
+        )
+        btn_import.pack(side="right", padx=6)
+
+    def _browse_file(self) -> None:
+        """Opens file dialog for spreadsheet selection."""
+        path = filedialog.askopenfilename(
+            title="Select Student Roster File",
+            filetypes=[
+                ("Spreadsheet Files", "*.xlsx *.csv"),
+                ("Excel Workbooks", "*.xlsx"),
+                ("CSV Files", "*.csv"),
+                ("All Files", "*.*"),
+            ]
+        )
+        if path:
+            self.file_entry.delete(0, "end")
+            self.file_entry.insert(0, path)
+
+    def _submit_import(self) -> None:
+        """Validates selection and executes bulk import via StudentImporterService."""
+        file_path = self.file_entry.get().strip()
+        if not file_path or not os.path.exists(file_path):
+            self.parent_view.show_error("File Error", "Please select a valid existing Excel (.xlsx) or CSV (.csv) file.")
+            return
+
+        class_id = self.classes_map.get(self.class_var.get())
+        session_id = self.sessions_map.get(self.sess_var.get())
+
+        if not class_id or not session_id:
+            self.parent_view.show_error("Selection Error", "Please select a valid class group and active academic session.")
+            return
+
+        try:
+            summary = self.importer_service.import_students_from_excel(
+                file_path=file_path,
+                class_group_id=class_id,
+                session_id=session_id
+            )
+            self.parent_view.refresh_data()
+            self.close()
+            ImportSummaryModal(self.parent_view, summary)
+
+        except Exception as exc:
+            logger.error(f"Bulk student import failed: {exc}", exc_info=True)
+            self.parent_view.show_error("Import Failure", str(exc))
+
+
+# =============================================================================
+# Modal Dialog: Ingestion Results Summary
+# =============================================================================
+
+class ImportSummaryModal(BaseModal):
+    """Presents a detailed results breakdown after student bulk ingestion."""
+
+    def __init__(self, parent_view: StudentView, summary: Dict[str, Any]):
+        super().__init__(
+            parent_view,
+            title="Student Ingestion Results",
+            width=560,
+            height=500
+        )
+        self.summary = summary
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        # Metrics KPI strip
+        kpi_frame = ctk.CTkFrame(self.card, fg_color="transparent")
+        kpi_frame.pack(fill="x", padx=16, pady=(0, 12))
+        kpi_frame.grid_columnconfigure((0, 1, 2), weight=1)
+
+        total = self.summary.get("total_rows", 0)
+        imported = self.summary.get("imported_count", 0)
+        failed = self.summary.get("failed_count", 0)
+
+        # Total Card
+        c1 = ctk.CTkFrame(kpi_frame, fg_color=THEME_COLORS["bg_app"], corner_radius=6)
+        c1.grid(row=0, column=0, padx=4, sticky="ew")
+        ctk.CTkLabel(c1, text="Total Rows", font=ctk.CTkFont(size=11), text_color=THEME_COLORS["text_secondary"]).pack(pady=(6, 0))
+        ctk.CTkLabel(c1, text=str(total), font=ctk.CTkFont(size=18, weight="bold"), text_color=THEME_COLORS["text_primary"]).pack(pady=(0, 6))
+
+        # Imported Card (Emerald)
+        c2 = ctk.CTkFrame(kpi_frame, fg_color=THEME_COLORS["bg_app"], corner_radius=6)
+        c2.grid(row=0, column=1, padx=4, sticky="ew")
+        ctk.CTkLabel(c2, text="Imported", font=ctk.CTkFont(size=11), text_color=THEME_COLORS["text_secondary"]).pack(pady=(6, 0))
+        ctk.CTkLabel(c2, text=str(imported), font=ctk.CTkFont(size=18, weight="bold"), text_color=THEME_COLORS["brand_primary"]).pack(pady=(0, 6))
+
+        # Failed Card (Red / Muted)
+        failed_color = THEME_COLORS["status_unpaid"] if failed > 0 else THEME_COLORS["text_muted"]
+        c3 = ctk.CTkFrame(kpi_frame, fg_color=THEME_COLORS["bg_app"], corner_radius=6)
+        c3.grid(row=0, column=2, padx=4, sticky="ew")
+        ctk.CTkLabel(c3, text="Failed / Skipped", font=ctk.CTkFont(size=11), text_color=THEME_COLORS["text_secondary"]).pack(pady=(6, 0))
+        ctk.CTkLabel(c3, text=str(failed), font=ctk.CTkFont(size=18, weight="bold"), text_color=failed_color).pack(pady=(0, 6))
+
+        # Detailed error log (if any)
+        errors = self.summary.get("errors", [])
+        if errors:
+            ctk.CTkLabel(
+                self.card,
+                text="⚠️ Skipped Rows / Validation Errors:",
+                font=ctk.CTkFont(size=12, weight="bold"),
+                text_color=THEME_COLORS["status_unpaid"]
+            ).pack(anchor="w", padx=16, pady=(4, 4))
+
+            err_scroll = ctk.CTkScrollableFrame(self.card, fg_color=THEME_COLORS["bg_app"], corner_radius=6, height=220)
+            err_scroll.pack(fill="both", expand=True, padx=16, pady=(0, 12))
+
+            for err in errors:
+                err_row = ctk.CTkFrame(err_scroll, fg_color=THEME_COLORS["bg_card"], corner_radius=4)
+                err_row.pack(fill="x", pady=2, padx=2)
+
+                row_txt = f"Row {err.get('row', '?')}: {err.get('student_name', 'Unknown')}"
+                ctk.CTkLabel(
+                    err_row,
+                    text=row_txt,
+                    font=ctk.CTkFont(size=11, weight="bold"),
+                    text_color=THEME_COLORS["brand_accent"],
+                    anchor="w"
+                ).pack(anchor="w", padx=8, pady=(4, 0))
+
+                ctk.CTkLabel(
+                    err_row,
+                    text=err.get("error", "Unknown error"),
+                    font=ctk.CTkFont(size=11),
+                    text_color=THEME_COLORS["text_primary"],
+                    wraplength=480,
+                    justify="left",
+                    anchor="w"
+                ).pack(anchor="w", padx=8, pady=(0, 4))
+        else:
+            success_card = ctk.CTkFrame(self.card, fg_color=THEME_COLORS["bg_app"], corner_radius=6)
+            success_card.pack(fill="both", expand=True, padx=16, pady=(8, 12))
+            ctk.CTkLabel(
+                success_card,
+                text="🎉 All student records imported cleanly with zero validation errors!",
+                font=ctk.CTkFont(size=13, weight="bold"),
+                text_color=THEME_COLORS["brand_primary"]
+            ).pack(pady=40)
+
+        # Close button
+        btn_done = ctk.CTkButton(
+            self.card,
+            text="Done",
+            command=self.close,
+            fg_color=THEME_COLORS["brand_primary"],
+            hover_color=THEME_COLORS["brand_accent"],
+            width=100
+        )
+        btn_done.pack(pady=(0, 16))

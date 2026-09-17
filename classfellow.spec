@@ -43,6 +43,7 @@ hiddenimports = [
     "services.exam_service",
     "services.backup_service",
     "services.schema_service",
+    "services.importer_service",
     "ui",
     "ui.base_view",
     "ui.dashboard_view",

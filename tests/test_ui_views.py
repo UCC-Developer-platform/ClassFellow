@@ -358,7 +358,26 @@ def test_gui_workspace_swapping_live_window(populated_ui_db):
 
             # Swap to students
             assert app.navigate_to("students") is True
-            assert app.current_view == app.views.get("students")
+            student_view = app.views.get("students")
+            assert app.current_view == student_view
+
+            # Verify ImportSummaryModal and StudentImportModal
+            from ui.student_view import StudentImportModal, ImportSummaryModal
+            import_modal = StudentImportModal(student_view)
+            import_modal.close()
+
+            summary_with_errors = {
+                "total_rows": 5,
+                "imported_count": 4,
+                "failed_count": 1,
+                "errors": [{"row": 2, "student_name": "Bad Phone Student", "error": "Invalid phone format"}]
+            }
+            summary_modal = ImportSummaryModal(student_view, summary_with_errors)
+            summary_modal.close()
+
+            summary_clean = {"total_rows": 3, "imported_count": 3, "failed_count": 0, "errors": []}
+            clean_modal = ImportSummaryModal(student_view, summary_clean)
+            clean_modal.close()
 
             # Swap to fees
             assert app.navigate_to("fees") is True
