@@ -1,0 +1,15 @@
+{
+  "system": {
+    "app_name": "ClassFellow",
+    "version": "1.0.0",
+    "licensed_tier": "Tier 3: Professional Suite"
+  },
+  "modules": {
+    "students": true,
+    "fees": true,
+    "attendance": true,
+    "examinations": true,
+    "backups": true,
+    "reports": true
+  }
+}
