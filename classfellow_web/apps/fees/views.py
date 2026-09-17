@@ -13,9 +13,11 @@ from django.shortcuts import redirect, render
 from django.views.decorators.http import require_http_methods
 
 from app.reports.fee_voucher_generator import generate_fee_voucher_pdf
-from apps.core.models import AcademicSession, InstitutionProfile
+from apps.accounts.models import Role, User
+from apps.core.models import AcademicSession, Campus, InstitutionProfile
 from apps.fees.models import FeeInvoice, PaymentMethod
-from apps.fees.services import FeeWebService
+from apps.fees.reports import FeeExcelExportService
+from apps.fees.services import CashierReconciliationService, FeeWebService
 from apps.students.models import ClassGroup
 
 
@@ -201,4 +203,77 @@ def stream_fee_voucher_pdf(request: HttpRequest, invoice_id: int) -> HttpRespons
 
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f'inline; filename="Fee_Voucher_{invoice.month_year}_{invoice.id}.pdf"'
+    return response
+
+
+@login_required
+def reconciliation_view(request: HttpRequest) -> HttpResponse:
+    """Renders cashier day-closing financial reconciliation summary and audit ledger."""
+    date_str = request.GET.get("date", "").strip()
+    if date_str:
+        try:
+            target_date = datetime.date.fromisoformat(date_str)
+        except ValueError:
+            target_date = datetime.date.today()
+    else:
+        target_date = datetime.date.today()
+
+    cashier_id_val = request.GET.get("cashier_id", "").strip()
+    cashier_id = int(cashier_id_val) if cashier_id_val.isdigit() else None
+
+    campus_id_val = request.GET.get("campus_id", "").strip()
+    campus_id = int(campus_id_val) if campus_id_val.isdigit() else None
+
+    summary = CashierReconciliationService.generate_daily_closing_summary(
+        target_date=target_date,
+        user_id=cashier_id,
+        campus_id=campus_id,
+    )
+
+    cashiers = User.objects.filter(role__in=[Role.CASHIER, Role.ADMIN]).order_by("username")
+    campuses = Campus.objects.filter(is_active=True).order_by("name")
+    institution = InstitutionProfile.objects.first()
+
+    context = {
+        "summary": summary,
+        "target_date": target_date,
+        "target_date_str": target_date.isoformat(),
+        "selected_cashier_id": cashier_id,
+        "selected_campus_id": campus_id,
+        "cashiers": cashiers,
+        "campuses": campuses,
+        "institution": institution,
+    }
+    return render(request, "fees/reconciliation.html", context)
+
+
+@login_required
+def export_monthly_collection_xlsx(request: HttpRequest) -> HttpResponse:
+    """Streams a styled openpyxl Excel spreadsheet for fee collection audit."""
+    session_id_val = request.GET.get("session_id", "").strip()
+    if session_id_val.isdigit():
+        session_id = int(session_id_val)
+    else:
+        active_session = AcademicSession.objects.filter(is_active=True).first()
+        session_id = active_session.id if active_session else 1
+
+    month_year = request.GET.get("month_year", "").strip()
+    if not month_year:
+        month_year = datetime.date.today().strftime("%Y-%m")
+
+    campus_id_val = request.GET.get("campus_id", "").strip()
+    campus_id = int(campus_id_val) if campus_id_val.isdigit() else None
+
+    xlsx_buffer = FeeExcelExportService.export_monthly_collection_workbook(
+        session_id=session_id,
+        month_year=month_year,
+        campus_id=campus_id,
+    )
+
+    response = HttpResponse(
+        xlsx_buffer.getvalue(),
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    filename = f"Monthly_Collection_{month_year}.xlsx"
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
     return response

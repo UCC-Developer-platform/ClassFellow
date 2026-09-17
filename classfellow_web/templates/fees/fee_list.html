@@ -55,9 +55,17 @@
         </button>
     </div>
 
-    <button type="button" class="btn btn-primary" onclick="openModal('generateModal')">
-        ➕ Generate Monthly Invoices
-    </button>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <a href="/fees/reconciliation/" class="btn btn-secondary btn-sm" style="font-weight:600;">
+            📊 Day Closing
+        </a>
+        <a href="/fees/reports/monthly-collection/xlsx/?month_year={{ current_month }}" class="btn btn-secondary btn-sm" style="font-weight:600;">
+            📥 Export XLSX
+        </a>
+        <button type="button" class="btn btn-primary btn-sm" onclick="openModal('generateModal')">
+            ➕ Generate Invoices
+        </button>
+    </div>
 </div>
 
 <!-- Tab 1: Invoices Ledger -->

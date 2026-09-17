@@ -12,4 +12,6 @@ urlpatterns = [
     path("pay/", views.record_payment_view, name="record_payment"),
     path("generate/", views.generate_invoices_view, name="generate_invoices"),
     path("vouchers/<int:invoice_id>/pdf/", views.stream_fee_voucher_pdf, name="stream_voucher_pdf"),
+    path("reconciliation/", views.reconciliation_view, name="reconciliation"),
+    path("reports/monthly-collection/xlsx/", views.export_monthly_collection_xlsx, name="export_monthly_xlsx"),
 ]

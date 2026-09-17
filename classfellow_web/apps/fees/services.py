@@ -9,11 +9,12 @@ from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 from django.db import transaction
-from django.db.models import F, OuterRef, Q, Subquery, Sum
+from django.db.models import F, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from apps.core.models import AcademicSession
+from apps.accounts.models import User
+from apps.core.models import Campus
 from apps.fees.models import (
     FeeHead,
     FeeInvoice,
@@ -97,7 +98,6 @@ class FeeWebService:
         )
 
         invoices_to_create = []
-        items_to_create = []
         created_count = 0
 
         for enrollment in enrollments_qs:
@@ -274,3 +274,133 @@ class FeeWebService:
             )
 
         return defaulters
+
+
+class CashierReconciliationService:
+    """
+    Encapsulates cashier day-closing financial reconciliation, payment aggregations,
+    receipt sequencing boundaries, and reversal audit logs.
+    """
+
+    @staticmethod
+    def generate_daily_closing_summary(
+        target_date: datetime.date,
+        user_id: Optional[int] = None,
+        campus_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Aggregates financial collection data for a specified date, optionally scoped
+        by cashier user and/or campus facility.
+        """
+        payments_qs = Payment.objects.filter(payment_date=target_date)
+
+        if user_id is not None:
+            payments_qs = payments_qs.filter(recorded_by_user_id=user_id)
+
+        if campus_id is not None:
+            payments_qs = payments_qs.filter(
+                invoice__enrollment__class_group__campus_id=campus_id
+            )
+
+        # 1. Issued Payments
+        issued_qs = (
+            payments_qs.filter(status=PaymentStatus.ISSUED)
+            .select_related(
+                "invoice__enrollment__student",
+                "invoice__enrollment__class_group",
+                "recorded_by_user",
+            )
+            .order_by("receipt_number", "id")
+        )
+
+        total_collected = issued_qs.aggregate(val=Coalesce(Sum("amount"), Decimal("0.00")))["val"]
+        receipts_count = issued_qs.count()
+
+        receipt_numbers = list(issued_qs.values_list("receipt_number", flat=True))
+        receipt_range_start = receipt_numbers[0] if receipt_numbers else None
+        receipt_range_end = receipt_numbers[-1] if receipt_numbers else None
+
+        # Payment Method Breakdown
+        method_breakdown = {
+            PaymentMethod.CASH.value: Decimal("0.00"),
+            PaymentMethod.BANK_TRANSFER.value: Decimal("0.00"),
+            PaymentMethod.ONLINE_DEPOSIT.value: Decimal("0.00"),
+            PaymentMethod.CHEQUE.value: Decimal("0.00"),
+        }
+        for row in issued_qs.values("payment_method").annotate(total=Sum("amount")):
+            method_breakdown[row["payment_method"]] = row["total"]
+
+        # 2. Reversed Transactions
+        reversed_qs = (
+            payments_qs.filter(status=PaymentStatus.REVERSED)
+            .select_related(
+                "invoice__enrollment__student",
+                "recorded_by_user",
+            )
+            .order_by("id")
+        )
+        reversed_count = reversed_qs.count()
+        reversed_amount = reversed_qs.aggregate(val=Coalesce(Sum("amount"), Decimal("0.00")))["val"]
+
+        reversed_transactions = []
+        for r in reversed_qs:
+            student = r.invoice.enrollment.student
+            reversed_transactions.append({
+                "id": r.id,
+                "receipt_number": r.receipt_number,
+                "amount": r.amount,
+                "payment_method": r.payment_method,
+                "student_name": f"{student.first_name} {student.last_name}".strip(),
+                "admission_number": student.admission_number,
+                "reversal_reason": r.reversal_reason,
+                "note": r.note,
+                "recorded_by": r.recorded_by_user.username if r.recorded_by_user else "System",
+            })
+
+        # 3. Contextual Names
+        cashier_name = None
+        if user_id:
+            user = User.objects.filter(id=user_id).first()
+            if user:
+                cashier_name = user.get_full_name() or user.username
+
+        campus_name = None
+        if campus_id:
+            campus = Campus.objects.filter(id=campus_id).first()
+            if campus:
+                campus_name = campus.name
+
+        # 4. Itemized Ledger for Audit
+        payments_list = []
+        for p in issued_qs:
+            student = p.invoice.enrollment.student
+            cg = p.invoice.enrollment.class_group
+            payments_list.append({
+                "id": p.id,
+                "receipt_number": p.receipt_number,
+                "amount": p.amount,
+                "payment_method": p.payment_method,
+                "student_name": f"{student.first_name} {student.last_name}".strip(),
+                "admission_number": student.admission_number,
+                "class_name": f"{cg.name} - {cg.section_or_batch}",
+                "recorded_by": p.recorded_by_user.username if p.recorded_by_user else "System",
+                "note": p.note,
+                "created_at": p.created_at,
+            })
+
+        return {
+            "target_date": target_date,
+            "user_id": user_id,
+            "campus_id": campus_id,
+            "cashier_name": cashier_name or "All Cashiers",
+            "campus_name": campus_name or "All Campuses",
+            "total_collected": total_collected,
+            "receipts_count": receipts_count,
+            "receipt_range_start": receipt_range_start,
+            "receipt_range_end": receipt_range_end,
+            "method_breakdown": method_breakdown,
+            "reversed_count": reversed_count,
+            "reversed_amount": reversed_amount,
+            "reversed_transactions": reversed_transactions,
+            "payments_list": payments_list,
+        }

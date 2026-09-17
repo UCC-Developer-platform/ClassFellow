@@ -62,6 +62,14 @@ class ClassGroup(models.Model):
     )
     name = models.CharField(max_length=100, help_text="e.g. Class 9, Class 10, Matric Physics.")
     section_or_batch = models.CharField(max_length=100, help_text="e.g. Section A, Evening Batch.")
+    campus = models.ForeignKey(
+        "core.Campus",
+        on_delete=models.RESTRICT,
+        null=True,
+        blank=True,
+        related_name="classes",
+        help_text="Branch or campus facility.",
+    )
     group_type = models.CharField(max_length=50, choices=GroupType.choices, default=GroupType.SCHOOL_CLASS)
     monthly_tuition_fee = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     created_at = models.DateTimeField(auto_now_add=True)

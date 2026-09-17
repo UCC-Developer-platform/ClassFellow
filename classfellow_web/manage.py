@@ -7,10 +7,13 @@ from pathlib import Path
 
 def main():
     """Run administrative tasks."""
-    # Ensure classfellow_web directory is on sys.path
+    # Ensure classfellow_web and repository root directory are on sys.path
     base_dir = Path(__file__).resolve().parent
+    root_dir = base_dir.parent
     if str(base_dir) not in sys.path:
         sys.path.insert(0, str(base_dir))
+    if str(root_dir) not in sys.path:
+        sys.path.insert(0, str(root_dir))
 
     os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
     try:
