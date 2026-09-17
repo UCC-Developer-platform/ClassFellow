@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+
+{% block title %}Staff Directory & Administration{% endblock %}
+{% block workspace_title %}Staff & Faculty Administration{% endblock %}
+{% block workspace_subtitle %}Institutional human resources directory, teacher-to-subject scoping, and payroll management{% endblock %}
+
+{% block content %}
+<style>
+    .filter-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        background-color: var(--bg-surface);
+        padding: 16px 20px;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border-color);
+    }
+
+    .filter-inputs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+        flex: 1;
+    }
+
+    .kpi-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .kpi-tile {
+        background-color: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: 18px 20px;
+    }
+
+    .kpi-tile-label {
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--slate-400);
+        margin-bottom: 6px;
+    }
+
+    .kpi-tile-value {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: var(--slate-50);
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+
+    .status-badge-active {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        background-color: rgba(16, 185, 129, 0.15);
+        color: var(--emerald-400);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .status-badge-inactive {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        background-color: var(--rose-bg);
+        color: var(--rose-500);
+        border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+</style>
+
+<!-- KPI Summary Tiles -->
+<div class="kpi-row">
+    <div class="kpi-tile">
+        <div class="kpi-tile-label">Total Faculty & Staff</div>
+        <div class="kpi-tile-value">{{ total_staff }}</div>
+    </div>
+    <div class="kpi-tile">
+        <div class="kpi-tile-label">Active Staff Members</div>
+        <div class="kpi-tile-value" style="color:var(--emerald-400);">{{ active_staff }}</div>
+    </div>
+    <div class="kpi-tile">
+        <div class="kpi-tile-label">Monthly Payroll Ledger</div>
+        <div class="kpi-tile-value" style="color:var(--emerald-400);">Rs. {{ total_payroll|floatformat:2 }}</div>
+    </div>
+</div>
+
+<!-- Filter & Action Toolbar -->
+<div class="filter-bar">
+    <form method="get" action="/staff/" class="filter-inputs">
+        <input 
+            type="text" 
+            name="q" 
+            value="{{ query }}" 
+            placeholder="Search by name, employee #, designation, phone..." 
+            class="form-control"
+            style="min-width: 280px;"
+        >
+
+        <select name="campus_id" class="form-control" style="width: auto;">
+            <option value="">All Campuses</option>
+            {% for c in campuses %}
+                <option value="{{ c.id }}" {% if selected_campus_id == c.id %}selected{% endif %}>
+                    {{ c.name }}
+                </option>
+            {% endfor %}
+        </select>
+
+        <select name="status" class="form-control" style="width: auto;">
+            <option value="active" {% if selected_status == 'active' %}selected{% endif %}>Active Only</option>
+            <option value="inactive" {% if selected_status == 'inactive' %}selected{% endif %}>Inactive Only</option>
+            <option value="all" {% if selected_status == 'all' %}selected{% endif %}>All Staff</option>
+        </select>
+
+        <button type="submit" class="btn btn-secondary">🔍 Filter</button>
+        {% if query or selected_campus_id or selected_status != 'active' %}
+            <a href="/staff/" class="btn btn-secondary" style="background:transparent;">Reset</a>
+        {% endif %}
+    </form>
+
+    <div class="filter-actions">
+        <button type="button" class="btn btn-primary" onclick="openModal('registerStaffModal')">
+            ➕ Register Staff Member
+        </button>
+    </div>
+</div>
+
+<!-- Staff Records Table -->
+<div class="card">
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Emp ID</th>
+                    <th>Staff Name & Urdu</th>
+                    <th>Designation & Dept</th>
+                    <th>Campus</th>
+                    <th>Contact Phone</th>
+                    <th style="text-align:right;">Basic Salary</th>
+                    <th style="text-align:center;">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in staff_members %}
+                <tr>
+                    <td>
+                        <span style="font-family:monospace; font-weight:700; color:var(--emerald-400);">
+                            {{ s.employee_id }}
+                        </span>
+                    </td>
+                    <td>
+                        <div style="font-weight:600; color:var(--slate-50);">{{ s.full_name }}</div>
+                        {% if s.urdu_name %}
+                            <div class="urdu-text" style="font-size:0.9rem; color:var(--slate-400);">
+                                {{ s.urdu_name }}
+                            </div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div style="font-weight:600;">{{ s.designation }}</div>
+                        <div style="font-size:0.78rem; color:var(--slate-400);">{{ s.department }}</div>
+                    </td>
+                    <td>
+                        <span style="font-size:0.85rem; color:var(--slate-200);">
+                            {{ s.campus.name }}
+                        </span>
+                    </td>
+                    <td>
+                        <a href="tel:{{ s.phone }}" style="color:var(--slate-200); text-decoration:none; font-family:monospace;">
+                            {{ s.phone }}
+                        </a>
+                        {% if s.email %}
+                            <div style="font-size:0.75rem; color:var(--slate-400);">{{ s.email }}</div>
+                        {% endif %}
+                    </td>
+                    <td style="text-align:right; font-weight:700; font-family:monospace;">
+                        Rs. {{ s.basic_salary|floatformat:2 }}
+                    </td>
+                    <td style="text-align:center;">
+                        {% if s.is_active %}
+                            <span class="status-badge-active">Active</span>
+                        {% else %}
+                            <span class="status-badge-inactive">Inactive</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" style="text-align:center; padding:36px; color:var(--slate-400);">
+                        No faculty or staff profiles found matching criteria. Click <strong>"Register Staff Member"</strong> to add an employee.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal: Register Staff Member -->
+<div id="registerStaffModal" class="modal-overlay">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Register Institutional Staff Member</h3>
+            <button type="button" onclick="closeModal('registerStaffModal')" style="background:none; border:none; color:var(--slate-400); font-size:1.4rem; cursor:pointer;">&times;</button>
+        </div>
+        <form method="post" action="/staff/create/">
+            {% csrf_token %}
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="employee_id">Employee ID *</label>
+                        <input type="text" id="employee_id" name="employee_id" class="form-control" required value="{{ suggested_employee_id }}">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="campus_id">Assigned Campus *</label>
+                        <select id="campus_id" name="campus_id" class="form-control" required>
+                            {% for c in campuses %}
+                                <option value="{{ c.id }}">{{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="first_name">First Name *</label>
+                        <input type="text" id="first_name" name="first_name" class="form-control" required placeholder="e.g. Muhammad">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="last_name">Last Name</label>
+                        <input type="text" id="last_name" name="last_name" class="form-control" placeholder="e.g. Asif">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="urdu_name">Urdu Name (اردو نام)</label>
+                        <input type="text" id="urdu_name" name="urdu_name" class="form-control urdu-text" placeholder="محمد آصف">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="national_id_cnic">CNIC / National ID</label>
+                        <input type="text" id="national_id_cnic" name="national_id_cnic" class="form-control" placeholder="35201-XXXXXXX-X">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="designation">Designation / Role *</label>
+                        <input type="text" id="designation" name="designation" class="form-control" required placeholder="e.g. Senior Teacher, Lab Assistant, Accountant">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="department">Department</label>
+                        <input type="text" id="department" name="department" class="form-control" placeholder="e.g. Science, Mathematics, Administration" value="Science">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="phone">Mobile Contact *</label>
+                        <input type="text" id="phone" name="phone" class="form-control" required placeholder="03XXXXXXXXX">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="email">Email Address</label>
+                        <input type="email" id="email" name="email" class="form-control" placeholder="staff@classfellow.edu.pk">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="basic_salary">Basic Monthly Salary (PKR) *</label>
+                        <input type="number" step="0.01" id="basic_salary" name="basic_salary" class="form-control" required value="45000.00">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="joining_date">Joining Date</label>
+                        <input type="date" id="joining_date" name="joining_date" class="form-control">
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('registerStaffModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save & Register Staff</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

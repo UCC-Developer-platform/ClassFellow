@@ -561,6 +561,10 @@
                 <span class="nav-icon">👨‍🎓</span>
                 <span class="nav-text">Students</span>
             </a>
+            <a href="/staff/" class="nav-link {% if '/staff/' in request.path %}active{% endif %}">
+                <span class="nav-icon">👨‍🏫</span>
+                <span class="nav-text">Staff</span>
+            </a>
             <a href="/fees/" class="nav-link {% if '/fees/' in request.path %}active{% endif %}">
                 <span class="nav-icon">💳</span>
                 <span class="nav-text">Fees & Accounts</span>

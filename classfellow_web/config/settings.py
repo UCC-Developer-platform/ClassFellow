@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "apps.fees.apps.FeesConfig",
     "apps.attendance.apps.AttendanceConfig",
     "apps.examinations.apps.ExaminationsConfig",
+    "apps.staff.apps.StaffConfig",
 ]
 
 MIDDLEWARE = [
@@ -137,3 +138,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 LOGIN_URL = "/accounts/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/accounts/login/"
+
+# Desktop-to-Cloud Sync Gateway Security
+INSTITUTION_SYNC_TOKEN = os.environ.get(
+    "INSTITUTION_SYNC_TOKEN",
+    "classfellow-sync-secret-token-2026",
+)

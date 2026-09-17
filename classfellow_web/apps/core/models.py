@@ -55,3 +55,25 @@ class Campus(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.code})" if self.code else self.name
+
+
+class InstitutionBackupSnapshot(models.Model):
+    """Stores metadata and payload for desktop-to-cloud automated backup snapshots."""
+    filename = models.CharField(max_length=255, help_text="Original snapshot filename.")
+    file_size_bytes = models.BigIntegerField(help_text="File size in bytes.")
+    sha256_hash = models.CharField(max_length=64, help_text="Cryptographic SHA-256 hex checksum.")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    desktop_machine_id = models.CharField(
+        max_length=100, blank=True, default="", help_text="Client machine hardware ID."
+    )
+    ip_address = models.GenericIPAddressField(null=True, blank=True, help_text="Originating IP address.")
+    backup_file = models.FileField(upload_to="uploads/backups/", help_text="Snapshot archive file.")
+
+    class Meta:
+        db_table = "institution_backups"
+        verbose_name = "Institution Backup Snapshot"
+        verbose_name_plural = "Institution Backup Snapshots"
+        ordering = ["-uploaded_at"]
+
+    def __str__(self):
+        return f"{self.filename} ({self.file_size_bytes} bytes) - {self.uploaded_at.strftime('%Y-%m-%d %H:%M')}"
