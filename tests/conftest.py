@@ -16,6 +16,13 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+WEB_ROOT = os.path.join(PROJECT_ROOT, "classfellow_web")
+if WEB_ROOT not in sys.path:
+    sys.path.insert(0, WEB_ROOT)
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+os.environ.setdefault("DJANGO_DB_ENGINE", "sqlite")
+
 from database import get_connection
 
 

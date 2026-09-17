@@ -85,10 +85,12 @@ AUTH_USER_MODEL = "accounts.User"
 DB_ENGINE = os.environ.get("DJANGO_DB_ENGINE", "postgresql").lower()
 
 if DB_ENGINE == "sqlite":
+    data_dir = BASE_DIR.parent / "data"
+    data_dir.mkdir(parents=True, exist_ok=True)
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR.parent / "data" / "classfellow_web.db",
+            "NAME": data_dir / "classfellow_web.db",
         }
     }
 else:
