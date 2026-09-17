@@ -24,7 +24,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Optional, Dict, List, Any, Callable
 
-from database import create_backup_snapshot
+from database import create_backup_snapshot, get_connection
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +197,18 @@ class BackupService:
         dest_filename = f"{prefix}_{now_str}.db"
         dest_path = os.path.join(self.daily_dir, dest_filename)
 
-        create_backup_snapshot(self.conn, dest_path)
+        try:
+            create_backup_snapshot(self.conn, dest_path)
+        except (sqlite3.ProgrammingError, sqlite3.OperationalError) as exc:
+            if "same thread" in str(exc).lower() and self.db_path and os.path.exists(self.db_path):
+                # Fallback: Open thread-local connection for backup
+                thread_conn = get_connection(self.db_path)
+                try:
+                    create_backup_snapshot(thread_conn, dest_path)
+                finally:
+                    thread_conn.close()
+            else:
+                raise
         logger.info(f"Tier 1 daily backup created: {dest_path}")
         return dest_path
 

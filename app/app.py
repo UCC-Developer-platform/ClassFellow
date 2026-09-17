@@ -210,8 +210,12 @@ class ClassFellowApp(ctk.CTk):
     def _run_async_startup_backup(self) -> None:
         """Executes Tier 1 daily backup and retention pruning in background."""
         try:
-            if hasattr(self, "backup_service") and self.backup_service:
-                self.backup_service.run_startup_backup()
+            thread_conn = get_connection(self.db_path) if self.db_path else get_connection()
+            try:
+                svc = BackupService(thread_conn, self.db_path)
+                svc.run_startup_backup()
+            finally:
+                thread_conn.close()
         except Exception as exc:
             logging.getLogger(__name__).warning(f"Startup backup error: {exc}")
 
