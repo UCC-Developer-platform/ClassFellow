@@ -50,6 +50,7 @@ classfellow/
 ├── docs/srs/                   # Formal Software Requirements Specifications
 ├── .github/workflows/          # Automated GitHub Actions CI/CD pipeline
 ├── classfellow.spec            # PyInstaller Windows 64-bit build specification
+├── installer.iss               # Inno Setup 6 Windows installer compiler script
 ├── requirements.txt            # Pinned production & development dependencies
 └── README.md
 ```
@@ -130,18 +131,48 @@ python scripts/seed_demo_data.py --db-path data/pilot_school.db --reset
 
 ## 📦 Standalone Windows Executable Build (.exe)
 
-Package ClassFellow into a standalone Windows 64-bit windowed executable using PyInstaller:
+Package ClassFellow into a standalone Windows 64-bit distribution folder using PyInstaller:
 
 ```bash
-# Build standalone executable from classfellow.spec
-pyinstaller classfellow.spec
+# Build standalone distribution directory from classfellow.spec
+pyinstaller classfellow.spec --clean
 ```
 
-The resulting standalone executable will be generated in `dist/ClassFellow.exe`, bundled with:
-- `assets/fonts/` (Urdu and Unicode TrueType fonts)
-- `config/` (`theme.json` and commercial tier `modules.json`)
-- CustomTkinter embedded theme json tokens and assets
-- All domain services, ReportLab PDF generators, and SQLite adapters
+The resulting standalone distribution is generated in `dist/ClassFellow/`:
+- `dist/ClassFellow/ClassFellow.exe` (Main windowed GUI executable)
+- `dist/ClassFellow/_internal/` (Bundled Python 3.12 runtime, dependencies, SQLite, ReportLab, and CustomTkinter)
+- Bundled `assets/` and `config/` data trees
+
+---
+
+## 💿 Windows Setup Wizard Installer (Inno Setup 6)
+
+Create a single-file Windows setup wizard (`ClassFellow_v1.0.0_Setup.exe`) configured for institutional deployment:
+
+### Prerequisites
+- Download and install [Inno Setup 6](https://jrsoftware.org/isdl.php).
+
+### Compilation
+1. Ensure the PyInstaller build is compiled in `dist/ClassFellow/`:
+   ```bash
+   pyinstaller classfellow.spec --clean
+   ```
+
+2. Compile `installer.iss` using the Inno Setup Command Line Compiler (`ISCC.exe`):
+   ```powershell
+   # Windows 64-bit Inno Setup path:
+   & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+   # Or if installed in 64-bit Program Files:
+   & "C:\Program Files\Inno Setup 6\ISCC.exe" installer.iss
+   ```
+
+3. The generated installer will be saved to:
+   - `dist/ClassFellow_v1.0.0_Setup.exe`
+
+### Installer Highlights:
+- Default installation directory: `{autopf}\ClassFellow` (Program Files) or `{userappdata}\ClassFellow` (Per-user).
+- Automated Desktop and Start Menu shortcut creation.
+- Clean uninstallation directives that safely preserve institutional student databases and backups (`data/` and `data/backups/`).
 
 ---
 

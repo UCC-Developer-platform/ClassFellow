@@ -14,7 +14,11 @@ import logging
 import customtkinter as ctk
 
 # Ensure root directory is in sys.path
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if getattr(sys, "frozen", False):
+    ROOT_DIR = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+else:
+    ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
@@ -49,6 +53,11 @@ def init_windows_dpi() -> None:
 def load_configuration() -> dict:
     """Loads application theme, system, and module configuration."""
     config_dir = os.path.join(ROOT_DIR, "config")
+    if not os.path.exists(config_dir) and getattr(sys, "frozen", False):
+        alt_config = os.path.join(os.path.dirname(sys.executable), "config")
+        if os.path.exists(alt_config):
+            config_dir = alt_config
+
     theme_path = os.path.join(config_dir, "theme.json")
     modules_path = os.path.join(config_dir, "modules.json")
 

@@ -21,7 +21,7 @@ block_cipher = None
 ctk_datas = collect_data_files("customtkinter")
 
 datas = [
-    ("assets/fonts", "assets/fonts"),
+    ("assets", "assets"),
     ("config", "config"),
 ] + ctk_datas
 
@@ -88,17 +88,13 @@ pyz = PYZ(
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
     [],
+    exclude_binaries=True,
     name="ClassFellow",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
     console=False,  # Windowed GUI application (no trailing console pop-up)
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -106,4 +102,15 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name="ClassFellow",
 )
