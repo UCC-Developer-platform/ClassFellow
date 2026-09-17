@@ -23,9 +23,13 @@ class CoreConfig(AppConfig):
                     def converter(value, expression, connection):
                         if value is not None:
                             if isinstance(value, decimal.Decimal):
-                                return value.quantize(quantize_value, context=expression.output_field.context)
+                                return value.quantize(
+                                    quantize_value, context=expression.output_field.context
+                                )
                             if isinstance(value, str):
-                                return decimal.Decimal(value).quantize(quantize_value, context=expression.output_field.context)
+                                return decimal.Decimal(value).quantize(
+                                    quantize_value, context=expression.output_field.context
+                                )
                             return decimal.Context(prec=15).create_decimal_from_float(value).quantize(
                                 quantize_value, context=expression.output_field.context
                             )
@@ -43,5 +47,3 @@ class CoreConfig(AppConfig):
             DatabaseOperations.get_decimalfield_converter = safe_get_decimalfield_converter
         except Exception:
             pass
-
-

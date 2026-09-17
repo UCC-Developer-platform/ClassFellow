@@ -1,0 +1,361 @@
+{% extends "base.html" %}
+
+{% block title %}Executive Analytics & Insights{% endblock %}
+{% block workspace_title %}Executive Analytics & Risk Intelligence{% endblock %}
+{% block workspace_subtitle %}Financial recovery matrix, top defaulting classes, and multi-dimensional student academic risk monitoring{% endblock %}
+
+{% block content %}
+<style>
+    .analytics-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        background-color: var(--bg-surface);
+        padding: 16px 20px;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border-color);
+    }
+
+    .kpi-grid-4 {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .kpi-card {
+        background-color: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: 20px;
+    }
+
+    .kpi-title {
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--slate-400);
+        margin-bottom: 8px;
+    }
+
+    .kpi-amount {
+        font-size: 1.6rem;
+        font-weight: 800;
+        color: var(--slate-50);
+        font-family: monospace;
+    }
+
+    .progress-track {
+        width: 100%;
+        height: 10px;
+        background-color: var(--bg-surface-elevated);
+        border-radius: 9999px;
+        overflow: hidden;
+        margin-top: 10px;
+        border: 1px solid var(--border-color);
+    }
+
+    .progress-fill-emerald {
+        height: 100%;
+        background: linear-gradient(90deg, var(--emerald-600), var(--emerald-400));
+        border-radius: 9999px;
+    }
+
+    .progress-fill-amber {
+        height: 100%;
+        background: linear-gradient(90deg, #D97706, #F59E0B);
+        border-radius: 9999px;
+    }
+
+    .progress-fill-rose {
+        height: 100%;
+        background: linear-gradient(90deg, #E11D48, #F43F5E);
+        border-radius: 9999px;
+    }
+
+    .recovery-bar-container {
+        width: 120px;
+        height: 8px;
+        background-color: var(--bg-surface-elevated);
+        border-radius: 4px;
+        overflow: hidden;
+        display: inline-block;
+        vertical-align: middle;
+        margin-right: 8px;
+    }
+
+    .risk-badge {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 0.72rem;
+        font-weight: 700;
+        margin-right: 4px;
+        margin-bottom: 4px;
+    }
+
+    .risk-badge-att {
+        background-color: rgba(245, 158, 11, 0.15);
+        color: #FBBF24;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .risk-badge-exam {
+        background-color: var(--rose-bg);
+        color: var(--rose-500);
+        border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+</style>
+
+<!-- Toolbar & Filter Options -->
+<div class="analytics-toolbar">
+    <form method="get" action="/analytics/" style="display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:0.82rem; font-weight:600; color:var(--slate-400);">Academic Session:</label>
+            <select name="session_id" class="form-control" onchange="this.form.submit()">
+                {% for s in sessions %}
+                    <option value="{{ s.id }}" {% if selected_session_id == s.id %}selected{% endif %}>
+                        {{ s.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:0.82rem; font-weight:600; color:var(--slate-400);">Billing Cycle:</label>
+            <input type="month" name="month_year" value="{{ selected_month_year }}" class="form-control" onchange="this.form.submit()">
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:0.82rem; font-weight:600; color:var(--slate-400);">Campus:</label>
+            <select name="campus_id" class="form-control" onchange="this.form.submit()">
+                <option value="">All Campuses</option>
+                {% for c in campuses %}
+                    <option value="{{ c.id }}" {% if selected_campus_id == c.id %}selected{% endif %}>
+                        {{ c.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
+
+    <div style="display:flex; gap:10px;">
+        <a 
+            href="/reports/monthly-audit-packet/{{ selected_session_id }}/{{ selected_month_year }}/pdf/{% if selected_campus_id %}?campus_id={{ selected_campus_id }}{% endif %}" 
+            class="btn btn-primary"
+            target="_blank"
+        >
+            📄 Download Monthly Audit Packet (PDF)
+        </a>
+    </div>
+</div>
+
+<!-- Financial Recovery Metric Tiles -->
+<div class="kpi-grid-4">
+    <div class="kpi-card">
+        <div class="kpi-title">Total Invoiced (Billed)</div>
+        <div class="kpi-amount">Rs. {{ recovery.total_invoiced|floatformat:2 }}</div>
+        <div style="font-size:0.75rem; color:var(--slate-400); margin-top:6px;">Billing Month: {{ selected_month_year }}</div>
+    </div>
+
+    <div class="kpi-card">
+        <div class="kpi-title">Total Collected</div>
+        <div class="kpi-amount" style="color:var(--emerald-400);">Rs. {{ recovery.total_collected|floatformat:2 }}</div>
+        <div style="font-size:0.75rem; color:var(--slate-400); margin-top:6px;">Reconciled Cashier Receipts</div>
+    </div>
+
+    <div class="kpi-card">
+        <div class="kpi-title">Outstanding Ledger (Arrears)</div>
+        <div class="kpi-amount" style="color:var(--rose-500);">Rs. {{ recovery.total_outstanding|floatformat:2 }}</div>
+        <div style="font-size:0.75rem; color:var(--slate-400); margin-top:6px;">Uncollected Accounts Receivable</div>
+    </div>
+
+    <div class="kpi-card">
+        <div class="kpi-title">Overall Recovery Rate</div>
+        <div class="kpi-amount" style="color:{% if recovery.overall_recovery_pct >= 80 %}var(--emerald-400){% elif recovery.overall_recovery_pct >= 50 %}var(--amber-500){% else %}var(--rose-500){% endif %};">
+            {{ recovery.overall_recovery_pct }}%
+        </div>
+        <div class="progress-track">
+            <div class="{% if recovery.overall_recovery_pct >= 80 %}progress-fill-emerald{% elif recovery.overall_recovery_pct >= 50 %}progress-fill-amber{% else %}progress-fill-rose{% endif %}" style="width: {{ recovery.overall_recovery_pct }}%;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Section 1: Financial Recovery Matrix & Defaulters Callout -->
+<div style="display:grid; grid-template-columns: 2fr 1fr; gap:20px; margin-bottom:28px;">
+    <!-- Class Recovery Table -->
+    <div class="card">
+        <h3 style="font-size:1.05rem; font-weight:700; margin-bottom:14px; color:var(--slate-50);">
+            Class-by-Class Fee Recovery Breakdown
+        </h3>
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Class & Section</th>
+                        <th>Campus</th>
+                        <th style="text-align:right;">Billed (Rs.)</th>
+                        <th style="text-align:right;">Collected (Rs.)</th>
+                        <th style="text-align:right;">Balance (Rs.)</th>
+                        <th style="text-align:center;">Recovery %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cr in recovery.class_recovery_list %}
+                    <tr>
+                        <td style="font-weight:600;">{{ cr.class_name }}</td>
+                        <td style="font-size:0.8rem; color:var(--slate-400);">{{ cr.campus_name }}</td>
+                        <td style="text-align:right; font-family:monospace;">{{ cr.invoiced_amount|floatformat:2 }}</td>
+                        <td style="text-align:right; font-family:monospace; color:var(--emerald-400);">
+                            {{ cr.collected_amount|floatformat:2 }}
+                        </td>
+                        <td style="text-align:right; font-family:monospace; color:{% if cr.outstanding_amount > 0 %}var(--rose-500){% else %}var(--slate-400){% endif %};">
+                            {{ cr.outstanding_amount|floatformat:2 }}
+                        </td>
+                        <td style="text-align:center;">
+                            <div class="recovery-bar-container">
+                                <div class="{% if cr.recovery_percentage >= 80 %}progress-fill-emerald{% elif cr.recovery_percentage >= 50 %}progress-fill-amber{% else %}progress-fill-rose{% endif %}" style="width: {{ cr.recovery_percentage }}%;"></div>
+                            </div>
+                            <span style="font-size:0.8rem; font-weight:700; font-family:monospace;">
+                                {{ cr.recovery_percentage }}%
+                            </span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" style="text-align:center; padding:24px; color:var(--slate-400);">
+                            No fee invoices issued for the selected cycle.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Top Defaulting Classes Callout Card -->
+    <div class="card">
+        <h3 style="font-size:1.05rem; font-weight:700; margin-bottom:14px; color:var(--rose-500);">
+            ⚠️ Top Defaulting Classes
+        </h3>
+        <p style="font-size:0.8rem; color:var(--slate-400); margin-bottom:14px;">
+            Classes prioritized by highest uncollected debt requiring immediate fee recovery follow-up.
+        </p>
+        {% if recovery.top_defaulting_classes %}
+            <div style="display:flex; flex-direction:column; gap:12px;">
+                {% for td in recovery.top_defaulting_classes %}
+                <div style="background:var(--bg-surface-elevated); border-left:4px solid var(--rose-500); padding:12px 14px; border-radius:6px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-weight:700; color:var(--slate-50);">{{ td.class_name }}</span>
+                        <span style="font-family:monospace; font-weight:700; color:var(--rose-500);">
+                            Rs. {{ td.outstanding_amount|floatformat:0 }}
+                        </span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; margin-top:4px; font-size:0.75rem; color:var(--slate-400);">
+                        <span>Campus: {{ td.campus_name }}</span>
+                        <span>Recovery: {{ td.recovery_percentage }}%</span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div style="text-align:center; padding:32px; color:var(--emerald-400);">
+                🎉 Zero Defaulting Classes!<br/>
+                <span style="font-size:0.8rem; color:var(--slate-400);">All invoices fully reconciled.</span>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Section 2: Student Academic Risk Intelligence Roster -->
+<div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <div>
+            <h3 style="font-size:1.1rem; font-weight:700; color:var(--slate-50);">
+                🚨 Academic Risk Intelligence Roster
+            </h3>
+            <p style="font-size:0.82rem; color:var(--slate-400);">
+                Students exhibiting chronic absenteeism (< 75% attendance) or critical examination subject failures.
+            </p>
+        </div>
+        <span style="background:var(--bg-surface-elevated); padding:6px 14px; border-radius:9999px; font-size:0.8rem; font-weight:700; border:1px solid var(--border-color);">
+            At-Risk Students: <strong style="color:var(--rose-500);">{{ risk_count }}</strong>
+        </span>
+    </div>
+
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Admission #</th>
+                    <th>Student Name & Urdu</th>
+                    <th>Class & Campus</th>
+                    <th>Guardian Contact</th>
+                    <th style="text-align:center;">Attendance %</th>
+                    <th style="text-align:center;">Failing Subjects</th>
+                    <th>Risk Indicators</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in risk_roster %}
+                <tr>
+                    <td style="font-family:monospace; font-weight:700; color:var(--emerald-400);">
+                        {{ r.admission_number }}
+                    </td>
+                    <td>
+                        <div style="font-weight:600; color:var(--slate-50);">{{ r.student_name }}</div>
+                        {% if r.urdu_name %}
+                            <div class="urdu-text" style="font-size:0.85rem; color:var(--slate-400);">{{ r.urdu_name }}</div>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div>{{ r.class_name }}</div>
+                        <div style="font-size:0.75rem; color:var(--slate-400);">{{ r.campus_name }}</div>
+                    </td>
+                    <td>
+                        <a href="https://wa.me/92{{ r.guardian_phone|slice:'1:' }}" target="_blank" style="color:var(--emerald-400); text-decoration:none; font-family:monospace;">
+                            {{ r.guardian_phone }}
+                        </a>
+                        <div style="font-size:0.75rem; color:var(--slate-400);">{{ r.guardian_name }}</div>
+                    </td>
+                    <td style="text-align:center;">
+                        {% if r.attendance_percentage is not None %}
+                            <span style="font-weight:700; color:{% if r.attendance_percentage < 75 %}var(--amber-500){% else %}var(--emerald-400){% endif %};">
+                                {{ r.attendance_percentage }}%
+                            </span>
+                        {% else %}
+                            <span style="color:var(--slate-500);">—</span>
+                        {% endif %}
+                    </td>
+                    <td style="text-align:center;">
+                        {% if r.failing_subjects_count > 0 %}
+                            <span style="font-weight:800; color:var(--rose-500);">{{ r.failing_subjects_count }}</span>
+                        {% else %}
+                            <span style="color:var(--emerald-400);">0</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% for rf in r.risk_factors %}
+                            {% if "Attendance" in rf %}
+                                <span class="risk-badge risk-badge-att">⚠️ {{ rf }}</span>
+                            {% else %}
+                                <span class="risk-badge risk-badge-exam">❌ {{ rf }}</span>
+                            {% endif %}
+                        {% endfor %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7" style="text-align:center; padding:36px; color:var(--emerald-400);">
+                        🎉 Excellent! Zero students meet academic or attendance risk criteria in this session.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
