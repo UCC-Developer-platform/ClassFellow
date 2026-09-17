@@ -9,9 +9,8 @@ import urllib.parse
 from typing import Any, Dict, List, Optional
 
 from django.db import transaction
-from django.utils import timezone
 
-from apps.attendance.models import AttendanceRecord, AttendanceStatus, BatchSession
+from apps.attendance.models import AttendanceRecord, AttendanceStatus
 from apps.students.models import Enrollment, EnrollmentStatus
 from apps.students.services import normalize_pakistan_phone
 
@@ -85,7 +84,8 @@ class AttendanceWebService:
 
         for entry in attendance_entries:
             enrollment_id = entry["enrollment_id"]
-            status = entry.get("status", AttendanceStatus.PRESENT)
+            status_raw = entry.get("status", AttendanceStatus.PRESENT)
+            status = status_raw.capitalize() if isinstance(status_raw, str) else status_raw
             if status not in valid_statuses:
                 raise ValueError(f"Invalid attendance status '{status}'. Must be one of {valid_statuses}.")
 
