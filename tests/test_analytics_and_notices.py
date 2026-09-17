@@ -20,6 +20,7 @@ os.environ["DJANGO_DB_ENGINE"] = "sqlite"
 import django  # noqa: E402
 django.setup()
 
+from django.core.management import call_command  # noqa: E402
 from django.test import Client  # noqa: E402
 
 from apps.accounts.models import Role, User  # noqa: E402
@@ -35,6 +36,12 @@ from apps.core.models import (  # noqa: E402
 from apps.examinations.models import Exam, ExamSubject, ExamType, Mark, Subject  # noqa: E402
 from apps.fees.models import FeeInvoice, FeeInvoiceItem, Payment, PaymentMethod, PaymentStatus  # noqa: E402
 from apps.students.models import ClassGroup, Enrollment, Gender, GroupType, Student  # noqa: E402
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_analytics_database():
+    """Migrates the test database to ensure all tables exist."""
+    call_command("migrate", interactive=False)
 
 
 @pytest.fixture(autouse=True)

@@ -27,9 +27,16 @@ from django.test import Client  # noqa: E402
 
 from apps.accounts.models import Role, User  # noqa: E402
 from apps.core.models import AcademicSession, Campus, InstitutionBackupSnapshot  # noqa: E402
+from django.core.management import call_command  # noqa: E402
 from apps.examinations.models import Subject  # noqa: E402
 from apps.staff.models import Staff, StaffSubjectAllocation  # noqa: E402
 from apps.students.models import ClassGroup, GroupType  # noqa: E402
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_staff_database():
+    """Migrates the test database to ensure all tables exist."""
+    call_command("migrate", interactive=False)
 
 
 @pytest.fixture(autouse=True)

@@ -22,6 +22,7 @@ os.environ["DJANGO_DB_ENGINE"] = "sqlite"
 import django  # noqa: E402
 django.setup()
 
+from django.core.management import call_command  # noqa: E402
 from rest_framework.authtoken.models import Token  # noqa: E402
 from rest_framework.test import APIClient  # noqa: E402
 
@@ -32,6 +33,12 @@ from apps.examinations.models import Exam, ExamSubject, ExamType, GradingTier, M
 from apps.fees.models import FeeHead, FeeInvoice, FeeInvoiceItem, Payment, PaymentMethod, PaymentStatus  # noqa: E402
 from apps.staff.models import Staff, StaffSubjectAllocation  # noqa: E402
 from apps.students.models import ClassGroup, Enrollment, EnrollmentStatus, Gender, GroupType, Student  # noqa: E402
+
+
+@pytest.fixture(scope="module", autouse=True)
+def setup_api_database():
+    """Migrates the test database to ensure all tables exist."""
+    call_command("migrate", interactive=False)
 
 
 @pytest.fixture(autouse=True)
