@@ -362,3 +362,41 @@ def stream_monthly_audit_packet_pdf(
     response = HttpResponse(pdf_buffer.getvalue(), content_type="application/pdf")
     response["Content-Disposition"] = f'inline; filename="Monthly_Audit_Packet_{month_year}.pdf"'
     return response
+
+
+@csrf_exempt
+def health_check_view(request: HttpRequest) -> JsonResponse:
+    """
+    GET /health/
+    Unauthenticated, lightweight container health probe for Docker, Kubernetes, and Nginx.
+    Verifies active database connectivity and returns 200 OK or 503 Service Unavailable.
+    """
+    from django.db import connection
+
+    try:
+        connection.ensure_connection()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1;")
+            cursor.fetchone()
+
+        return JsonResponse(
+            {
+                "status": "healthy",
+                "database": "connected",
+                "service": "classfellow_web",
+                "version": "1.0.0",
+            },
+            status=200,
+        )
+    except Exception as exc:
+        logger.error("Health check database probe failed: %s", exc, exc_info=True)
+        return JsonResponse(
+            {
+                "status": "unhealthy",
+                "database": "disconnected",
+                "service": "classfellow_web",
+                "error": str(exc),
+            },
+            status=503,
+        )
+

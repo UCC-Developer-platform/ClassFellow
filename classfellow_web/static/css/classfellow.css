@@ -1,0 +1,22 @@
+/**
+ * ClassFellow Web - Institutional Brand CSS Tokens (Category 17)
+ * Dark Slate (#0F172A), Emerald (#10B981), Card Surfaces (#1E293B)
+ */
+
+:root {
+  --cf-slate-900: #0f172a;
+  --cf-slate-800: #1e293b;
+  --cf-slate-700: #334155;
+  --cf-emerald-500: #10b981;
+  --cf-emerald-600: #059669;
+  --cf-amber-500: #f59e0b;
+  --cf-rose-500: #ef4444;
+  --cf-text-primary: #f8fafc;
+  --cf-text-muted: #94a3b8;
+}
+
+body {
+  background-color: var(--cf-slate-900);
+  color: var(--cf-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
