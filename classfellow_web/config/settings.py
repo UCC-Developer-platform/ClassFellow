@@ -25,7 +25,7 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "True").lower() in ("true", "1", "yes")
 
 ALLOWED_HOSTS = [
     host.strip()
-    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]").split(",")
+    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,[::1],testserver").split(",")
     if host.strip()
 ]
 
@@ -130,3 +130,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 # Default primary key field type
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Authentication and redirection URLs
+LOGIN_URL = "/accounts/login/"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/accounts/login/"

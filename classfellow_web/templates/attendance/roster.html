@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Attendance Roster{% endblock %}
+{% block workspace_title %}Daily Class Attendance{% endblock %}
+{% block workspace_subtitle %}Roster verification with default 'Present' status and WhatsApp notifications{% endblock %}
+
+{% block content %}
+<style>
+    .selector-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        background-color: var(--bg-surface);
+        padding: 16px 20px;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border-color);
+    }
+
+    .selector-inputs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: center;
+    }
+
+    .status-group {
+        display: flex;
+        gap: 6px;
+        background-color: var(--bg-body);
+        padding: 4px;
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        width: fit-content;
+    }
+
+    .status-radio {
+        display: none;
+    }
+
+    .status-label {
+        font-size: 0.76rem;
+        font-weight: 600;
+        padding: 6px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+        color: var(--slate-400);
+        transition: all 0.15s ease;
+    }
+
+    .status-radio:checked + .status-label.status-present {
+        background-color: var(--emerald-500);
+        color: #FFFFFF;
+        box-shadow: 0 0 10px var(--emerald-glow);
+    }
+
+    .status-radio:checked + .status-label.status-absent {
+        background-color: var(--rose-500);
+        color: #FFFFFF;
+    }
+
+    .status-radio:checked + .status-label.status-late {
+        background-color: var(--amber-500);
+        color: #FFFFFF;
+    }
+
+    .status-radio:checked + .status-label.status-leave {
+        background-color: var(--blue-500);
+        color: #FFFFFF;
+    }
+</style>
+
+<!-- Date & Class Selector -->
+<div class="selector-bar">
+    <form method="get" action="/attendance/" class="selector-inputs">
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:0.82rem; font-weight:600; color:var(--slate-400);">Date:</label>
+            <input type="date" name="date" value="{{ target_date_str }}" class="form-control" onchange="this.form.submit()">
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:0.82rem; font-weight:600; color:var(--slate-400);">Class:</label>
+            <select name="class_id" class="form-control" onchange="this.form.submit()">
+                {% for c in classes %}
+                    <option value="{{ c.id }}" {% if selected_class_id == c.id %}selected{% endif %}>
+                        {{ c.name }} ({{ c.section_or_batch }})
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
+
+    <div>
+        <span class="session-pill">
+            <span class="status-dot"></span>
+            Total in Roster: <strong>{{ roster|length }}</strong>
+        </span>
+    </div>
+</div>
+
+<!-- Attendance Entry Table -->
+<div class="card" style="padding:0; overflow:hidden;">
+    {% if roster %}
+    <form method="post" action="/attendance/save/">
+        {% csrf_token %}
+        <input type="hidden" name="class_group_id" value="{{ selected_class_id }}">
+        <input type="hidden" name="attendance_date" value="{{ target_date_str }}">
+
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th style="width:70px;">Roll #</th>
+                        <th>Student Name</th>
+                        <th>Admission #</th>
+                        <th style="min-width: 280px;">Attendance Status</th>
+                        <th>Reason / Note</th>
+                        <th style="width:120px;">Notice</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in roster %}
+                    <input type="hidden" name="enrollment_ids" value="{{ r.enrollment_id }}">
+                    <tr>
+                        <td><strong style="color:var(--slate-50);">{{ r.roll_number|default:"—" }}</strong></td>
+                        <td>
+                            <div style="font-weight:600;">{{ r.student_name }}</div>
+                            {% if r.urdu_name %}
+                                <div class="urdu-text" style="font-size:0.82rem; color:var(--emerald-400);">{{ r.urdu_name }}</div>
+                            {% endif %}
+                        </td>
+                        <td><span style="font-family:monospace; color:var(--slate-400);">{{ r.admission_number }}</span></td>
+                        <td>
+                            <div class="status-group">
+                                <label>
+                                    <input 
+                                        type="radio" 
+                                        name="status_{{ r.enrollment_id }}" 
+                                        value="Present" 
+                                        class="status-radio" 
+                                        {% if r.status == "Present" %}checked{% endif %}
+                                    >
+                                    <span class="status-label status-present">Present</span>
+                                </label>
+                                <label>
+                                    <input 
+                                        type="radio" 
+                                        name="status_{{ r.enrollment_id }}" 
+                                        value="Absent" 
+                                        class="status-radio" 
+                                        {% if r.status == "Absent" %}checked{% endif %}
+                                    >
+                                    <span class="status-label status-absent">Absent</span>
+                                </label>
+                                <label>
+                                    <input 
+                                        type="radio" 
+                                        name="status_{{ r.enrollment_id }}" 
+                                        value="Late" 
+                                        class="status-radio" 
+                                        {% if r.status == "Late" %}checked{% endif %}
+                                    >
+                                    <span class="status-label status-late">Late</span>
+                                </label>
+                                <label>
+                                    <input 
+                                        type="radio" 
+                                        name="status_{{ r.enrollment_id }}" 
+                                        value="Leave" 
+                                        class="status-radio" 
+                                        {% if r.status == "Leave" %}checked{% endif %}
+                                    >
+                                    <span class="status-label status-leave">Leave</span>
+                                </label>
+                            </div>
+                        </td>
+                        <td>
+                            <input 
+                                type="text" 
+                                name="reason_{{ r.enrollment_id }}" 
+                                value="{{ r.reason_note }}" 
+                                placeholder="Optional remark" 
+                                class="form-control" 
+                                style="padding:6px 10px; font-size:0.82rem;"
+                            >
+                        </td>
+                        <td>
+                            {% if r.whatsapp_url %}
+                                <a 
+                                    href="{{ r.whatsapp_url }}" 
+                                    target="_blank" 
+                                    class="btn btn-secondary btn-sm"
+                                    style="color:#25D366; border-color:rgba(37, 211, 102, 0.3);"
+                                    title="Send WhatsApp Absence Alert"
+                                >
+                                    💬 Alert
+                                </a>
+                            {% else %}
+                                <span style="color:var(--slate-500); font-size:0.75rem;">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div style="padding: 18px 24px; background-color: rgba(0,0,0,0.15); border-top: 1px solid var(--border-color); display:flex; justify-content:flex-end;">
+            <button type="submit" class="btn btn-primary">
+                💾 Save Attendance Roster
+            </button>
+        </div>
+    </form>
+    {% else %}
+    <div style="text-align:center; padding:48px; color:var(--slate-400);">
+        No students currently enrolled in the selected class group.
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

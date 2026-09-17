@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+
+{% block title %}Institutional Dashboard{% endblock %}
+{% block workspace_title %}Institutional Dashboard{% endblock %}
+{% block workspace_subtitle %}Real-time administrative, academic, and financial matrix{% endblock %}
+
+{% block content %}
+<style>
+    .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 20px;
+        margin-bottom: 28px;
+    }
+
+    .kpi-card {
+        background-color: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        padding: 20px;
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .kpi-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .kpi-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: var(--accent-gradient, linear-gradient(90deg, var(--emerald-500), var(--emerald-400)));
+    }
+
+    .kpi-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 12px;
+    }
+
+    .kpi-title {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--slate-400);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .kpi-icon {
+        font-size: 1.25rem;
+        opacity: 0.85;
+    }
+
+    .kpi-value {
+        font-size: 1.75rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        color: var(--slate-50);
+    }
+
+    .kpi-subtext {
+        font-size: 0.74rem;
+        color: var(--slate-400);
+        margin-top: 6px;
+    }
+
+    .dashboard-layout {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 24px;
+    }
+
+    @media (max-width: 1024px) {
+        .dashboard-layout {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    .actions-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .action-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px;
+        background-color: var(--bg-body);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        text-decoration: none;
+        color: var(--slate-50);
+        transition: all 0.2s;
+    }
+
+    .action-item:hover {
+        border-color: var(--emerald-500);
+        background-color: rgba(16, 185, 129, 0.05);
+        transform: translateX(3px);
+    }
+
+    .action-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .action-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        background-color: var(--bg-surface-elevated);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+    }
+</style>
+
+<!-- Top KPI Summary Cards -->
+<div class="kpi-grid">
+    <div class="kpi-card" style="--accent-gradient: linear-gradient(90deg, #3B82F6, #60A5FA);">
+        <div class="kpi-header">
+            <span class="kpi-title">Active Students</span>
+            <span class="kpi-icon">👨‍🎓</span>
+        </div>
+        <div class="kpi-value">{{ total_students }}</div>
+        <div class="kpi-subtext">Across {{ total_classes }} Class Groups</div>
+    </div>
+
+    <div class="kpi-card" style="--accent-gradient: linear-gradient(90deg, #10B981, #34D399);">
+        <div class="kpi-header">
+            <span class="kpi-title">Today's Attendance</span>
+            <span class="kpi-icon">📅</span>
+        </div>
+        <div class="kpi-value">{{ attendance_pct }}%</div>
+        <div class="kpi-subtext">{{ present_today }} Present / {{ absent_today }} Absent</div>
+    </div>
+
+    <div class="kpi-card" style="--accent-gradient: linear-gradient(90deg, #F59E0B, #FBBF24);">
+        <div class="kpi-header">
+            <span class="kpi-title">Monthly Billed</span>
+            <span class="kpi-icon">🧾</span>
+        </div>
+        <div class="kpi-value">Rs. {{ total_invoiced|floatformat:0 }}</div>
+        <div class="kpi-subtext">Cycle: {{ current_month }}</div>
+    </div>
+
+    <div class="kpi-card" style="--accent-gradient: linear-gradient(90deg, #10B981, #059669);">
+        <div class="kpi-header">
+            <span class="kpi-title">Fee Collected</span>
+            <span class="kpi-icon">💰</span>
+        </div>
+        <div class="kpi-value">Rs. {{ total_collected|floatformat:0 }}</div>
+        <div class="kpi-subtext">Outstanding: Rs. {{ outstanding_balance|floatformat:0 }}</div>
+    </div>
+</div>
+
+<!-- Main Dashboard Split Layout -->
+<div class="dashboard-layout">
+    <!-- Recent Fee Ledger Activity -->
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+            <div>
+                <h3 style="font-size:1.05rem; font-weight:700;">Recent Payment Receipts</h3>
+                <p style="font-size:0.78rem; color:var(--slate-400);">Live stream of cashier transactions</p>
+            </div>
+            <a href="/fees/" class="btn btn-secondary btn-sm">View Full Ledger</a>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Receipt #</th>
+                        <th>Student Name</th>
+                        <th>Class</th>
+                        <th>Amount (PKR)</th>
+                        <th>Date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in recent_payments %}
+                    <tr>
+                        <td><strong>{{ p.receipt_number }}</strong></td>
+                        <td>
+                            {{ p.invoice.enrollment.student.first_name }} {{ p.invoice.enrollment.student.last_name }}
+                            <div style="font-size:0.75rem; color:var(--slate-400);">{{ p.invoice.enrollment.student.admission_number }}</div>
+                        </td>
+                        <td>{{ p.invoice.enrollment.class_group.name }}</td>
+                        <td><strong style="color:var(--emerald-400);">Rs. {{ p.amount|floatformat:2 }}</strong></td>
+                        <td>{{ p.payment_date|date:"d M Y" }}</td>
+                        <td><span class="badge badge-success">{{ p.status }}</span></td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" style="text-align:center; padding:24px; color:var(--slate-400);">
+                            No recent payment transactions recorded yet.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Quick Operations & Institutional Links -->
+    <div class="card">
+        <h3 style="font-size:1.05rem; font-weight:700; margin-bottom:6px;">Quick Operations</h3>
+        <p style="font-size:0.78rem; color:var(--slate-400); margin-bottom:18px;">Rapid workspace dispatch</p>
+
+        <div class="actions-list">
+            <a href="/students/" class="action-item">
+                <div class="action-info">
+                    <div class="action-icon">👨‍🎓</div>
+                    <div>
+                        <div style="font-weight:600; font-size:0.88rem;">Admit Student</div>
+                        <div style="font-size:0.74rem; color:var(--slate-400);">Register admission & enrollment</div>
+                    </div>
+                </div>
+                <span style="color:var(--emerald-400);">➔</span>
+            </a>
+
+            <a href="/fees/" class="action-item">
+                <div class="action-info">
+                    <div class="action-icon">💵</div>
+                    <div>
+                        <div style="font-weight:600; font-size:0.88rem;">Collect Fee Payment</div>
+                        <div style="font-size:0.74rem; color:var(--slate-400);">Issue payment receipt</div>
+                    </div>
+                </div>
+                <span style="color:var(--emerald-400);">➔</span>
+            </a>
+
+            <a href="/attendance/" class="action-item">
+                <div class="action-info">
+                    <div class="action-icon">📋</div>
+                    <div>
+                        <div style="font-weight:600; font-size:0.88rem;">Daily Class Attendance</div>
+                        <div style="font-size:0.74rem; color:var(--slate-400);">Mark roll call & WhatsApp alerts</div>
+                    </div>
+                </div>
+                <span style="color:var(--emerald-400);">➔</span>
+            </a>
+
+            <a href="/examinations/" class="action-item">
+                <div class="action-info">
+                    <div class="action-icon">📝</div>
+                    <div>
+                        <div style="font-weight:600; font-size:0.88rem;">Marks Entry & Results</div>
+                        <div style="font-size:0.74rem; color:var(--slate-400);">Compile term report cards</div>
+                    </div>
+                </div>
+                <span style="color:var(--emerald-400);">➔</span>
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,346 @@
+{% extends "base.html" %}
+
+{% block title %}Fees & Accounts{% endblock %}
+{% block workspace_title %}Fees, Accounts & Defaulters Ledger{% endblock %}
+{% block workspace_subtitle %}Billing cycles, cashier payment collection, and ReportLab A4 voucher generation{% endblock %}
+
+{% block content %}
+<style>
+    .tab-nav {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 24px;
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 12px;
+    }
+
+    .tab-btn {
+        background: transparent;
+        border: none;
+        color: var(--slate-400);
+        padding: 8px 16px;
+        border-radius: var(--radius-md);
+        font-weight: 600;
+        font-size: 0.92rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+        color: var(--emerald-400);
+        background-color: rgba(16, 185, 129, 0.15);
+    }
+
+    .toolbar-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+</style>
+
+<div class="toolbar-actions">
+    <div class="tab-nav" style="border:none; margin:0; padding:0;">
+        <button class="tab-btn active" id="tabLedgerBtn" onclick="showTab('ledger')">
+            🧾 Monthly Invoices Ledger
+        </button>
+        <button class="tab-btn" id="tabDefaultersBtn" onclick="showTab('defaulters')">
+            ⚠️ Overdue Defaulters ({{ defaulters|length }})
+        </button>
+    </div>
+
+    <button type="button" class="btn btn-primary" onclick="openModal('generateModal')">
+        ➕ Generate Monthly Invoices
+    </button>
+</div>
+
+<!-- Tab 1: Invoices Ledger -->
+<div id="tabLedger" class="card" style="padding:0; overflow:hidden;">
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Voucher #</th>
+                    <th>Student Name</th>
+                    <th>Class</th>
+                    <th>Cycle</th>
+                    <th>Net Due</th>
+                    <th>Paid</th>
+                    <th>Balance</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in invoices %}
+                {% with inv=item.invoice %}
+                <tr>
+                    <td>
+                        <span style="font-family:monospace; font-weight:700;">#{{ inv.id }}</span>
+                    </td>
+                    <td>
+                        <div style="font-weight:600;">
+                            {{ inv.enrollment.student.first_name }} {{ inv.enrollment.student.last_name }}
+                        </div>
+                        <div style="font-size:0.75rem; color:var(--slate-400);">
+                            {{ inv.enrollment.student.admission_number }}
+                        </div>
+                    </td>
+                    <td>{{ inv.enrollment.class_group.name }}</td>
+                    <td><span class="badge badge-info">{{ inv.month_year }}</span></td>
+                    <td>Rs. {{ inv.net_due|floatformat:2 }}</td>
+                    <td>Rs. {{ item.total_paid|floatformat:2 }}</td>
+                    <td>
+                        <strong style="color:{% if item.current_balance > 0 %}var(--rose-500){% else %}var(--emerald-400){% endif %};">
+                            Rs. {{ item.current_balance|floatformat:2 }}
+                        </strong>
+                    </td>
+                    <td>
+                        {% if item.status == "Paid" %}
+                            <span class="badge badge-success">Paid</span>
+                        {% elif item.status == "Partially Paid" %}
+                            <span class="badge badge-warning">Partial</span>
+                        {% elif item.status == "Overpaid" %}
+                            <span class="badge badge-info">Overpaid</span>
+                        {% else %}
+                            <span class="badge badge-danger">Unpaid</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div style="display:flex; gap:6px;">
+                            {% if item.current_balance > 0 %}
+                            <button 
+                                type="button" 
+                                class="btn btn-secondary btn-sm"
+                                onclick="openPaymentModal('{{ inv.id }}', '{{ inv.enrollment.student.admission_number }}', '{{ item.current_balance }}')"
+                                title="Collect Fee"
+                            >
+                                💵 Pay
+                            </button>
+                            {% endif %}
+                            <a 
+                                href="/fees/vouchers/{{ inv.id }}/pdf/" 
+                                target="_blank" 
+                                class="btn btn-secondary btn-sm" 
+                                title="Print 3-Panel A4 Voucher"
+                            >
+                                📄 A4 PDF
+                            </a>
+                        </div>
+                    </td>
+                </tr>
+                {% endwith %}
+                {% empty %}
+                <tr>
+                    <td colspan="9" style="text-align:center; padding:36px; color:var(--slate-400);">
+                        No fee invoices recorded yet. Click <strong>"Generate Monthly Invoices"</strong> to bill students.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Tab 2: Defaulters List -->
+<div id="tabDefaulters" class="card" style="padding:0; overflow:hidden; display:none;">
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Admission #</th>
+                    <th>Student Name</th>
+                    <th>Class</th>
+                    <th>Cycle</th>
+                    <th>Total Due</th>
+                    <th>Current Balance</th>
+                    <th>Valid Until</th>
+                    <th>Guardian Mobile</th>
+                    <th>Notice</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for d in defaulters %}
+                <tr>
+                    <td><span style="font-family:monospace; font-weight:700;">{{ d.admission_number }}</span></td>
+                    <td>
+                        <div style="font-weight:600;">{{ d.full_name }}</div>
+                        {% if d.student_urdu_name %}
+                            <div class="urdu-text" style="font-size:0.8rem; color:var(--emerald-400);">{{ d.student_urdu_name }}</div>
+                        {% endif %}
+                    </td>
+                    <td>{{ d.class_name }}</td>
+                    <td>{{ d.month_year }}</td>
+                    <td>Rs. {{ d.net_due|floatformat:2 }}</td>
+                    <td><strong style="color:var(--rose-500);">Rs. {{ d.current_balance|floatformat:2 }}</strong></td>
+                    <td style="color:var(--amber-500);">{{ d.valid_until }}</td>
+                    <td>{{ d.guardian_phone }}</td>
+                    <td>
+                        <a 
+                            href="https://wa.me/92{{ d.guardian_phone|slice:'1:' }}?text=Dear%20Parent%2C%20Fee%20balance%20of%20Rs.%20{{ d.current_balance }}%20for%20{{ d.full_name }}%20is%20overdue.%20Kindly%20deposit%20promptly."
+                            target="_blank"
+                            class="btn btn-secondary btn-sm"
+                            style="color:#25D366; border-color:rgba(37, 211, 102, 0.3);"
+                        >
+                            💬 WhatsApp
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="9" style="text-align:center; padding:36px; color:var(--emerald-400);">
+                        🎉 Excellent! Zero overdue fee defaulters recorded for this session.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal: Record Payment -->
+<div id="paymentModal" class="modal-overlay">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Collect Fee Payment Receipt</h3>
+            <button type="button" onclick="closeModal('paymentModal')" style="background:none; border:none; color:var(--slate-400); font-size:1.4rem; cursor:pointer;">&times;</button>
+        </div>
+        <form method="post" action="/fees/pay/">
+            {% csrf_token %}
+            <input type="hidden" id="pay_invoice_id" name="invoice_id">
+
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Student Admission #</label>
+                    <input type="text" id="pay_student_adm" class="form-control" readonly style="opacity:0.8;">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="pay_amount">Payment Amount (PKR) *</label>
+                        <input type="number" id="pay_amount" name="amount" class="form-control" step="0.01" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="pay_method">Payment Method *</label>
+                        <select id="pay_method" name="payment_method" class="form-control" required>
+                            {% for code, label in payment_methods %}
+                                <option value="{{ code }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="pay_note">Cashier Note / Remarks</label>
+                    <input type="text" id="pay_note" name="note" class="form-control" placeholder="Optional deposit note">
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('paymentModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Issue Official Receipt</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: Generate Invoices -->
+<div id="generateModal" class="modal-overlay">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Generate Monthly Fee Invoices</h3>
+            <button type="button" onclick="closeModal('generateModal')" style="background:none; border:none; color:var(--slate-400); font-size:1.4rem; cursor:pointer;">&times;</button>
+        </div>
+        <form method="post" action="/fees/generate/">
+            {% csrf_token %}
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="gen_session">Academic Session *</label>
+                        <select id="gen_session" name="session_id" class="form-control" required>
+                            {% for s in sessions %}
+                                <option value="{{ s.id }}" {% if s.is_active %}selected{% endif %}>{{ s.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="gen_month">Billing Month (YYYY-MM) *</label>
+                        <input type="text" id="gen_month" name="month_year" class="form-control" value="{{ current_month }}" required pattern="^\d{4}-\d{2}$">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="gen_issue">Issue Date *</label>
+                        <input type="date" id="gen_issue" name="issue_date" class="form-control" value="{{ today_str }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="gen_due">Due Date *</label>
+                        <input type="date" id="gen_due" name="due_date" class="form-control" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="gen_valid">Valid Until *</label>
+                        <input type="date" id="gen_valid" name="valid_until" class="form-control" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="gen_surcharge">Late Surcharge (PKR)</label>
+                        <input type="number" id="gen_surcharge" name="late_fee_surcharge" class="form-control" value="200.00" step="50.00">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="gen_class">Target Class (Optional)</label>
+                    <select id="gen_class" name="class_group_id" class="form-control">
+                        <option value="">All Class Groups (Whole School)</option>
+                        {% for c in classes %}
+                            <option value="{{ c.id }}">{{ c.name }} ({{ c.section_or_batch }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('generateModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Generate Vouchers</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    function showTab(tabName) {
+        const ledger = document.getElementById('tabLedger');
+        const defaulters = document.getElementById('tabDefaulters');
+        const btnLedger = document.getElementById('tabLedgerBtn');
+        const btnDef = document.getElementById('tabDefaultersBtn');
+
+        if (tabName === 'ledger') {
+            ledger.style.display = 'block';
+            defaulters.style.display = 'none';
+            btnLedger.classList.add('active');
+            btnDef.classList.remove('active');
+        } else {
+            ledger.style.display = 'none';
+            defaulters.style.display = 'block';
+            btnDef.classList.add('active');
+            btnLedger.classList.remove('active');
+        }
+    }
+
+    function openPaymentModal(invoiceId, admissionNo, balance) {
+        document.getElementById('pay_invoice_id').value = invoiceId;
+        document.getElementById('pay_student_adm').value = admissionNo;
+        document.getElementById('pay_amount').value = balance;
+        openModal('paymentModal');
+    }
+</script>
+{% endblock %}
