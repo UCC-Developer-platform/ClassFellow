@@ -1,0 +1,8 @@
+[tool.pyrefly]
+python-interpreter-path = ".venv/Scripts/python.exe"
+search-path = [".", "classfellow_web"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+extraPaths = ["classfellow_web"]

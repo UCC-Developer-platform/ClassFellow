@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+
+{% block title %}Examinations & Report Cards{% endblock %}
+{% block workspace_title %}Examinations, Marks & Report Cards{% endblock %}
+{% block workspace_subtitle %}Examination marks entry, BISE Punjab grading tiers, and bilingual A4 report cards{% endblock %}
+
+{% block content %}
+<style>
+    .selector-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 16px;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        background-color: var(--bg-surface);
+        padding: 16px 20px;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border-color);
+    }
+
+    .tab-nav {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .tab-btn {
+        background: transparent;
+        border: none;
+        color: var(--slate-400);
+        padding: 8px 16px;
+        border-radius: var(--radius-md);
+        font-weight: 600;
+        font-size: 0.92rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .tab-btn.active {
+        color: var(--emerald-400);
+        background-color: rgba(16, 185, 129, 0.15);
+    }
+
+    .subject-pill-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 18px;
+    }
+
+    .subject-pill {
+        padding: 6px 14px;
+        border-radius: 20px;
+        background-color: var(--bg-body);
+        border: 1px solid var(--border-color);
+        color: var(--slate-300);
+        text-decoration: none;
+        font-size: 0.82rem;
+        font-weight: 500;
+        transition: all 0.15s;
+    }
+
+    .subject-pill:hover, .subject-pill.active {
+        background-color: var(--emerald-500);
+        color: #FFFFFF;
+        border-color: var(--emerald-500);
+    }
+</style>
+
+<!-- Exam & Class Filter Toolbar -->
+<div class="selector-bar">
+    <form method="get" action="/examinations/" style="display:flex; flex-wrap:wrap; gap:14px; align-items:center;">
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:0.82rem; font-weight:600; color:var(--slate-400);">Exam:</label>
+            <select name="exam_id" class="form-control" onchange="this.form.submit()">
+                {% for ex in exams %}
+                    <option value="{{ ex.id }}" {% if selected_exam_id == ex.id %}selected{% endif %}>
+                        {{ ex.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:0.82rem; font-weight:600; color:var(--slate-400);">Class:</label>
+            <select name="class_id" class="form-control" onchange="this.form.submit()">
+                {% for c in classes %}
+                    <option value="{{ c.id }}" {% if selected_class_id == c.id %}selected{% endif %}>
+                        {{ c.name }} ({{ c.section_or_batch }})
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
+
+    <div class="tab-nav" style="margin:0;">
+        <button class="tab-btn active" id="tabRanksBtn" onclick="switchExamTab('ranks')">
+            🏆 Class Rankings & Scorecards
+        </button>
+        <button class="tab-btn" id="tabMarksBtn" onclick="switchExamTab('marks')">
+            ✏️ Marks Entry Grid
+        </button>
+    </div>
+</div>
+
+<!-- Tab 1: Rankings & Scorecards -->
+<div id="tabRanks" class="card" style="padding:0; overflow:hidden;">
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th style="width:70px;">Rank</th>
+                    <th>Roll #</th>
+                    <th>Student Name</th>
+                    <th>Admission #</th>
+                    <th>Total Marks</th>
+                    <th>Obtained</th>
+                    <th>Percentage</th>
+                    <th>Grade</th>
+                    <th>Status</th>
+                    <th>Report Card</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in results %}
+                <tr>
+                    <td>
+                        <strong style="color:{% if r.rank == 1 %}#FBBF24{% elif r.rank == 2 %}#E2E8F0{% elif r.rank == 3 %}#F97316{% else %}var(--slate-400){% endif %}; font-size:1.05rem;">
+                            #{{ r.rank }}
+                        </strong>
+                    </td>
+                    <td><strong>{{ r.roll_number|default:"—" }}</strong></td>
+                    <td>
+                        <div style="font-weight:600;">{{ r.student_name }}</div>
+                        {% if r.urdu_name %}
+                            <div class="urdu-text" style="font-size:0.8rem; color:var(--emerald-400);">{{ r.urdu_name }}</div>
+                        {% endif %}
+                    </td>
+                    <td><span style="font-family:monospace; color:var(--slate-400);">{{ r.admission_number }}</span></td>
+                    <td>{{ r.total_max_marks|floatformat:0 }}</td>
+                    <td><strong>{{ r.total_obtained|floatformat:1 }}</strong></td>
+                    <td><strong style="color:var(--emerald-400);">{{ r.percentage }}%</strong></td>
+                    <td><span class="badge badge-info">{{ r.grade }}</span></td>
+                    <td>
+                        {% if r.is_passing %}
+                            <span class="badge badge-success">Passed</span>
+                        {% else %}
+                            <span class="badge badge-danger">Failed</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a 
+                            href="/examinations/report-card/{{ selected_exam_id }}/{{ r.enrollment_id }}/pdf/" 
+                            target="_blank" 
+                            class="btn btn-secondary btn-sm"
+                            title="Print Bilingual A4 Terminal Report Card"
+                        >
+                            📄 A4 PDF
+                        </a>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="10" style="text-align:center; padding:36px; color:var(--slate-400);">
+                        No examination marks found for this class group. Use the <strong>"Marks Entry Grid"</strong> tab to input subject scores.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Tab 2: Marks Entry Sheet -->
+<div id="tabMarks" class="card" style="padding:24px; display:none;">
+    {% if exam_subjects %}
+        <div class="subject-pill-bar">
+            {% for es in exam_subjects %}
+                <a 
+                    href="/examinations/?exam_id={{ selected_exam_id }}&class_id={{ selected_class_id }}&subject_id={{ es.id }}" 
+                    class="subject-pill {% if selected_subject_id == es.id %}active{% endif %}"
+                >
+                    {{ es.subject.name }} (Max: {{ es.maximum_marks|floatformat:0 }})
+                </a>
+            {% endfor %}
+        </div>
+
+        {% if selected_subject_id and student_marks_entries %}
+        <form method="post" action="/examinations/save-marks/">
+            {% csrf_token %}
+            <input type="hidden" name="exam_id" value="{{ selected_exam_id }}">
+            <input type="hidden" name="class_id" value="{{ selected_class_id }}">
+            <input type="hidden" name="exam_subject_id" value="{{ selected_subject_id }}">
+
+            <div class="table-responsive">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th style="width:70px;">Roll #</th>
+                            <th>Student Name</th>
+                            <th>Admission #</th>
+                            <th style="width:160px;">Marks Obtained</th>
+                            <th style="width:100px;">Absent?</th>
+                            <th>Teacher Remark</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in student_marks_entries %}
+                        <input type="hidden" name="enrollment_ids" value="{{ item.enrollment_id }}">
+                        <tr>
+                            <td><strong>{{ item.roll_number|default:"—" }}</strong></td>
+                            <td>
+                                <div style="font-weight:600;">{{ item.student_name }}</div>
+                                {% if item.urdu_name %}
+                                    <div class="urdu-text" style="font-size:0.8rem; color:var(--emerald-400);">{{ item.urdu_name }}</div>
+                                {% endif %}
+                            </td>
+                            <td><span style="font-family:monospace; color:var(--slate-400);">{{ item.admission_number }}</span></td>
+                            <td>
+                                <input 
+                                    type="number" 
+                                    name="marks_{{ item.enrollment_id }}" 
+                                    value="{{ item.marks_obtained }}" 
+                                    step="0.5" 
+                                    min="0" 
+                                    class="form-control" 
+                                    placeholder="0 - Max"
+                                    style="padding:6px 10px; font-weight:700;"
+                                >
+                            </td>
+                            <td style="text-align:center;">
+                                <input 
+                                    type="checkbox" 
+                                    name="absent_{{ item.enrollment_id }}" 
+                                    value="1" 
+                                    {% if item.is_absent %}checked{% endif %}
+                                    style="transform: scale(1.3); cursor:pointer;"
+                                >
+                            </td>
+                            <td>
+                                <input 
+                                    type="text" 
+                                    name="remarks_{{ item.enrollment_id }}" 
+                                    value="{{ item.remarks }}" 
+                                    class="form-control" 
+                                    placeholder="Optional remark" 
+                                    style="padding:6px 10px; font-size:0.82rem;"
+                                >
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div style="margin-top:20px; display:flex; justify-content:flex-end;">
+                <button type="submit" class="btn btn-primary">
+                    💾 Save Subject Marks
+                </button>
+            </div>
+        </form>
+        {% endif %}
+    {% else %}
+        <div style="text-align:center; padding:36px; color:var(--slate-400);">
+            No examination subjects configured for this class.
+        </div>
+    {% endif %}
+</div>
+
+<script>
+    function switchExamTab(tabName) {
+        const ranks = document.getElementById('tabRanks');
+        const marks = document.getElementById('tabMarks');
+        const btnRanks = document.getElementById('tabRanksBtn');
+        const btnMarks = document.getElementById('tabMarksBtn');
+
+        if (tabName === 'ranks') {
+            ranks.style.display = 'block';
+            marks.style.display = 'none';
+            btnRanks.classList.add('active');
+            btnMarks.classList.remove('active');
+        } else {
+            ranks.style.display = 'none';
+            marks.style.display = 'block';
+            btnMarks.classList.add('active');
+            btnRanks.classList.remove('active');
+        }
+    }
+
+    // Auto-open marks tab if subject_id is in query string
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('subject_id')) {
+        switchExamTab('marks');
+    }
+</script>
+{% endblock %}

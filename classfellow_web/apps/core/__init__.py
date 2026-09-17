@@ -1,0 +1,3 @@
+"""
+Core institutional framework package.
+"""

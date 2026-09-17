@@ -195,7 +195,24 @@ class BaseModal(ctk.CTkToplevel):
             self.grab_release()
         except Exception:
             pass
-        self.destroy()
+        try:
+            self.withdraw()
+        except Exception:
+            pass
+        try:
+            self.after(50, self._safe_destroy)
+        except Exception:
+            try:
+                self.destroy()
+            except Exception:
+                pass
+
+    def _safe_destroy(self) -> None:
+        """Destroys window safely after pending Tk event loop callbacks finish."""
+        try:
+            self.destroy()
+        except Exception:
+            pass
 
 
 class InfoDialog(BaseModal):

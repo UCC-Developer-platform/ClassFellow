@@ -6,17 +6,30 @@ Provides configured in-memory and temp-file SQLite database fixtures.
 
 import os
 import sys
-import tempfile
-import sqlite3
 import pytest
-from decimal import Decimal
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
-from database import get_connection
+WEB_ROOT = os.path.join(PROJECT_ROOT, "classfellow_web")
+if WEB_ROOT not in sys.path:
+    sys.path.insert(0, WEB_ROOT)
+
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+os.environ.setdefault("DJANGO_DB_ENGINE", "sqlite")
+
+from database import get_connection  # noqa: E402
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_django_environment():
+    """Ensures Django app is initialized and database schema is migrated before any tests run."""
+    import django
+    django.setup()
+    from django.core.management import call_command
+    call_command("migrate", interactive=False)
 
 
 @pytest.fixture
@@ -40,4 +53,3 @@ def memory_db_connection():
     conn = get_connection(":memory:")
     yield conn
     conn.close()
-

@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+
+{% block title %}Cashier Day-Closing Reconciliation{% endblock %}
+{% block workspace_title %}Financial Day-Closing Reconciliation{% endblock %}
+{% block workspace_subtitle %}Daily cashier collection audit, receipt sequence verification, and accountant sign-off{% endblock %}
+
+{% block content %}
+<style>
+    .recon-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        background-color: var(--bg-surface);
+        padding: 16px 20px;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border-color);
+    }
+
+    .kpi-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+
+    .kpi-tile {
+        background-color: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: 18px;
+    }
+
+    .kpi-tile-label {
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--slate-400);
+        margin-bottom: 6px;
+    }
+
+    .kpi-tile-value {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: var(--slate-50);
+    }
+
+    .audit-certificate {
+        background-color: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        padding: 32px;
+        box-shadow: var(--shadow-card);
+    }
+
+    .cert-header {
+        text-align: center;
+        border-bottom: 2px dashed var(--border-color);
+        padding-bottom: 20px;
+        margin-bottom: 24px;
+    }
+
+    .cert-header h2 {
+        font-size: 1.35rem;
+        font-weight: 800;
+        letter-spacing: -0.01em;
+    }
+
+    .cert-meta {
+        display: flex;
+        justify-content: center;
+        gap: 24px;
+        font-size: 0.84rem;
+        color: var(--slate-400);
+        margin-top: 8px;
+    }
+
+    .sign-off-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 30px;
+        margin-top: 48px;
+        padding-top: 24px;
+        border-top: 1px solid var(--border-color);
+        text-align: center;
+    }
+
+    .sig-line {
+        border-top: 1px solid var(--slate-400);
+        padding-top: 8px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: var(--slate-200);
+    }
+
+    @media print {
+        body {
+            background: #FFFFFF !important;
+            color: #000000 !important;
+        }
+        .sidebar, .top-navbar, .recon-toolbar, .btn, .messages-container {
+            display: none !important;
+        }
+        .main-wrapper {
+            margin-left: 0 !important;
+        }
+        .workspace-body {
+            padding: 0 !important;
+        }
+        .audit-certificate {
+            background: #FFFFFF !important;
+            border: 1px solid #CCCCCC !important;
+            color: #000000 !important;
+            box-shadow: none !important;
+            padding: 16px !important;
+        }
+        .table th {
+            background-color: #EEEEEE !important;
+            color: #000000 !important;
+        }
+        .table td {
+            color: #000000 !important;
+        }
+        .kpi-tile {
+            border: 1px solid #DDDDDD !important;
+            background: #FAFAFA !important;
+        }
+        .kpi-tile-value {
+            color: #000000 !important;
+        }
+        .sig-line {
+            border-top: 1px solid #000000 !important;
+            color: #000000 !important;
+        }
+    }
+</style>
+
+<!-- Toolbar & Filter Options -->
+<div class="recon-toolbar">
+    <form method="get" action="/fees/reconciliation/" style="display:flex; flex-wrap:wrap; gap:12px; align-items:center;">
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:0.82rem; font-weight:600; color:var(--slate-400);">Closing Date:</label>
+            <input type="date" name="date" value="{{ target_date_str }}" class="form-control" onchange="this.form.submit()">
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:0.82rem; font-weight:600; color:var(--slate-400);">Cashier:</label>
+            <select name="cashier_id" class="form-control" onchange="this.form.submit()">
+                <option value="">All Cashiers</option>
+                {% for u in cashiers %}
+                    <option value="{{ u.id }}" {% if selected_cashier_id == u.id %}selected{% endif %}>
+                        {{ u.get_full_name|default:u.username }} ({{ u.role }})
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:8px;">
+            <label style="font-size:0.82rem; font-weight:600; color:var(--slate-400);">Campus:</label>
+            <select name="campus_id" class="form-control" onchange="this.form.submit()">
+                <option value="">All Campuses</option>
+                {% for c in campuses %}
+                    <option value="{{ c.id }}" {% if selected_campus_id == c.id %}selected{% endif %}>
+                        {{ c.name }}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+    </form>
+
+    <div style="display:flex; gap:10px;">
+        <button type="button" class="btn btn-secondary" onclick="window.print()">
+            🖨️ Print Audit Certificate
+        </button>
+        <a href="/fees/" class="btn btn-secondary">
+            ⬅ Back to Ledger
+        </a>
+    </div>
+</div>
+
+<!-- KPI Summary Tiles -->
+<div class="kpi-row">
+    <div class="kpi-tile">
+        <div class="kpi-tile-label">Total Reconciled</div>
+        <div class="kpi-tile-value" style="color:var(--emerald-400);">
+            Rs. {{ summary.total_collected|floatformat:2 }}
+        </div>
+    </div>
+    <div class="kpi-tile">
+        <div class="kpi-tile-label">Receipts Count</div>
+        <div class="kpi-tile-value">{{ summary.receipts_count }}</div>
+    </div>
+    <div class="kpi-tile">
+        <div class="kpi-tile-label">Receipt Range</div>
+        <div style="font-size:0.88rem; font-family:monospace; font-weight:700; margin-top:6px;">
+            {% if summary.receipt_range_start %}
+                {{ summary.receipt_range_start }}<br><span style="color:var(--slate-400); font-weight:normal;">to</span> {{ summary.receipt_range_end }}
+            {% else %}
+                —
+            {% endif %}
+        </div>
+    </div>
+    <div class="kpi-tile">
+        <div class="kpi-tile-label">Reversals</div>
+        <div class="kpi-tile-value" style="color:{% if summary.reversed_count > 0 %}var(--rose-500){% else %}var(--slate-400){% endif %};">
+            {{ summary.reversed_count }} <span style="font-size:0.82rem; font-weight:normal;">(Rs. {{ summary.reversed_amount|floatformat:0 }})</span>
+        </div>
+    </div>
+</div>
+
+<!-- Main Audit Certificate Container -->
+<div class="audit-certificate">
+    <div class="cert-header">
+        <h2>{{ institution.name|default:"CLASSFELLOW HIGH SCHOOL & ACADEMY"|upper }}</h2>
+        <div style="font-size:1.05rem; font-weight:700; color:var(--emerald-400); margin-top:4px;">
+            DAILY CASHIER RECONCILIATION & CLOSING AUDIT
+        </div>
+        <div class="cert-meta">
+            <span>Date: <strong>{{ target_date|date:"d F Y" }}</strong></span>
+            <span>Campus: <strong>{{ summary.campus_name }}</strong></span>
+            <span>Cashier: <strong>{{ summary.cashier_name }}</strong></span>
+        </div>
+    </div>
+
+    <!-- Payment Method Breakdown Matrix -->
+    <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:12px;">1. Payment Method Breakdown</h4>
+    <div class="table-responsive" style="margin-bottom:28px;">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Payment Channel</th>
+                    <th style="text-align:right;">Total Amount (PKR)</th>
+                    <th style="text-align:right;">Share of Collection</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for method, amt in summary.method_breakdown.items %}
+                <tr>
+                    <td><strong>{{ method }}</strong></td>
+                    <td style="text-align:right; font-weight:700;">Rs. {{ amt|floatformat:2 }}</td>
+                    <td style="text-align:right; color:var(--slate-400);">
+                        {% if summary.total_collected > 0 %}
+                            {{ amt|divisibleby:summary.total_collected|default:"—" }}
+                        {% else %}
+                            0.0%
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                <tr style="background-color:rgba(16, 185, 129, 0.08); font-weight:800;">
+                    <td>TOTAL RECONCILED CASH & DEPOSITS</td>
+                    <td style="text-align:right; color:var(--emerald-400); font-size:1.05rem;">
+                        Rs. {{ summary.total_collected|floatformat:2 }}
+                    </td>
+                    <td style="text-align:right;">100.0%</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Itemized Issued Receipts Ledger -->
+    <h4 style="font-size:0.95rem; font-weight:700; margin-bottom:12px;">2. Itemized Issued Receipts</h4>
+    <div class="table-responsive" style="margin-bottom:28px;">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Receipt #</th>
+                    <th>Student Name</th>
+                    <th>Class</th>
+                    <th>Method</th>
+                    <th style="text-align:right;">Amount (PKR)</th>
+                    <th>Cashier</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in summary.payments_list %}
+                <tr>
+                    <td><strong style="font-family:monospace;">{{ p.receipt_number }}</strong></td>
+                    <td>
+                        {{ p.student_name }}
+                        <span style="font-size:0.75rem; color:var(--slate-400);">({{ p.admission_number }})</span>
+                    </td>
+                    <td>{{ p.class_name }}</td>
+                    <td><span class="badge badge-info">{{ p.payment_method }}</span></td>
+                    <td style="text-align:right; font-weight:700;">Rs. {{ p.amount|floatformat:2 }}</td>
+                    <td>{{ p.recorded_by }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="6" style="text-align:center; padding:24px; color:var(--slate-400);">
+                        No receipts issued for the selected criteria on this date.
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Reversals / Void Transactions -->
+    {% if summary.reversed_transactions %}
+    <h4 style="font-size:0.95rem; font-weight:700; color:var(--rose-500); margin-bottom:12px;">
+        3. Reversed & Void Transactions
+    </h4>
+    <div class="table-responsive" style="margin-bottom:28px;">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Receipt #</th>
+                    <th>Student Name</th>
+                    <th>Amount</th>
+                    <th>Method</th>
+                    <th>Reversal Reason</th>
+                    <th>Authorized By</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rev in summary.reversed_transactions %}
+                <tr>
+                    <td><strong style="font-family:monospace; color:var(--rose-500);">{{ rev.receipt_number }}</strong></td>
+                    <td>{{ rev.student_name }}</td>
+                    <td>Rs. {{ rev.amount|floatformat:2 }}</td>
+                    <td>{{ rev.payment_method }}</td>
+                    <td style="color:var(--amber-500);">{{ rev.reversal_reason|default:"Manual cashier reversal" }}</td>
+                    <td>{{ rev.recorded_by }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Formal Sign-Off Matrix -->
+    <div class="sign-off-grid">
+        <div>
+            <div class="sig-line">Cashier / Depositor Signature</div>
+            <div style="font-size:0.75rem; color:var(--slate-400); margin-top:4px;">{{ summary.cashier_name }}</div>
+        </div>
+        <div>
+            <div class="sig-line">Accounts Officer / Accountant</div>
+            <div style="font-size:0.75rem; color:var(--slate-400); margin-top:4px;">Verified with Bank Scrolls</div>
+        </div>
+        <div>
+            <div class="sig-line">Principal / Campus In-Charge</div>
+            <div style="font-size:0.75rem; color:var(--slate-400); margin-top:4px;">Approved & Closed</div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,339 @@
+{% extends "base.html" %}
+
+{% block title %}Institutional Noticeboard & Circulars{% endblock %}
+{% block workspace_title %}Parent Noticeboard & WhatsApp Bulletin Hub{% endblock %}
+{% block workspace_subtitle %}Official institutional announcements, fee reminders, exam schedules, and one-click WhatsApp broadcasts{% endblock %}
+
+{% block content %}
+<style>
+    .notices-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        background-color: var(--bg-surface);
+        padding: 16px 20px;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border-color);
+    }
+
+    .notice-feed {
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+    }
+
+    .notice-card {
+        background-color: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        padding: 24px;
+        transition: transform 0.15s ease, border-color 0.15s ease;
+    }
+
+    .notice-card:hover {
+        border-color: var(--emerald-500);
+    }
+
+    .notice-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 12px;
+        gap: 16px;
+    }
+
+    .notice-type-pill {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 9999px;
+        font-size: 0.74rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .pill-fee {
+        background-color: var(--rose-bg);
+        color: var(--rose-500);
+        border: 1px solid rgba(244, 63, 94, 0.3);
+    }
+
+    .pill-exam {
+        background-color: rgba(59, 130, 246, 0.15);
+        color: var(--blue-500);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .pill-holiday {
+        background-color: rgba(245, 158, 11, 0.15);
+        color: var(--amber-500);
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    .pill-general {
+        background-color: rgba(16, 185, 129, 0.15);
+        color: var(--emerald-400);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+
+    .notice-content {
+        color: var(--slate-200);
+        font-size: 0.92rem;
+        line-height: 1.6;
+        white-space: pre-line;
+        margin-bottom: 16px;
+    }
+
+    .notice-urdu-box {
+        background-color: var(--bg-surface-elevated);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 14px 16px;
+        margin-bottom: 16px;
+    }
+
+    .notice-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid var(--border-color);
+        padding-top: 14px;
+        font-size: 0.8rem;
+        color: var(--slate-400);
+    }
+
+    .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+    }
+</style>
+
+<!-- Toolbar -->
+<div class="notices-toolbar">
+    <form method="get" action="/notices/" style="display:flex; flex-wrap:wrap; gap:12px; align-items:center; flex:1;">
+        <input 
+            type="text" 
+            name="q" 
+            value="{{ query }}" 
+            placeholder="Search circulars by keyword..." 
+            class="form-control"
+            style="min-width: 240px;"
+        >
+
+        <select name="type" class="form-control" onchange="this.form.submit()">
+            <option value="">All Notice Categories</option>
+            {% for val, label in notice_types %}
+                <option value="{{ val }}" {% if selected_type == val %}selected{% endif %}>
+                    {{ label }}
+                </option>
+            {% endfor %}
+        </select>
+
+        <select name="campus_id" class="form-control" onchange="this.form.submit()">
+            <option value="">All Campuses</option>
+            {% for c in campuses %}
+                <option value="{{ c.id }}" {% if selected_campus_id == c.id %}selected{% endif %}>
+                    {{ c.name }}
+                </option>
+            {% endfor %}
+        </select>
+
+        <button type="submit" class="btn btn-secondary">🔍 Filter</button>
+        {% if query or selected_type or selected_campus_id %}
+            <a href="/notices/" class="btn btn-secondary" style="background:transparent;">Reset</a>
+        {% endif %}
+    </form>
+
+    {% if can_post %}
+    <div>
+        <button type="button" class="btn btn-primary" onclick="openModal('postNoticeModal')">
+            📢 Post New Circular
+        </button>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Noticeboard Feed -->
+<div class="notice-feed">
+    {% for n in notices %}
+    <div class="notice-card">
+        <div class="notice-header">
+            <div>
+                <span class="notice-type-pill {% if n.notice_type == 'FeeReminder' %}pill-fee{% elif n.notice_type == 'ExamSchedule' %}pill-exam{% elif n.notice_type == 'Holiday' %}pill-holiday{% else %}pill-general{% endif %}">
+                    {{ n.get_notice_type_display }}
+                </span>
+                <h3 style="font-size:1.2rem; font-weight:700; color:var(--slate-50); margin-top:8px;">
+                    {{ n.title }}
+                </h3>
+            </div>
+            <button 
+                type="button" 
+                class="btn btn-secondary" 
+                style="background:#25D366; color:#FFFFFF; border:none; font-weight:700;"
+                onclick="showWhatsAppModal({{ n.id }})"
+            >
+                💬 Copy WhatsApp Broadcast
+            </button>
+        </div>
+
+        <div class="notice-content">
+            {{ n.content }}
+        </div>
+
+        {% if n.urdu_title or n.urdu_content %}
+        <div class="notice-urdu-box">
+            {% if n.urdu_title %}
+                <div class="urdu-text" style="font-size:1.05rem; font-weight:700; color:var(--emerald-400); margin-bottom:6px;">
+                    {{ n.urdu_title }}
+                </div>
+            {% endif %}
+            {% if n.urdu_content %}
+                <div class="urdu-text" style="font-size:0.95rem; color:var(--slate-200); line-height:1.8;">
+                    {{ n.urdu_content }}
+                </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="notice-footer">
+            <div>
+                🗓 Published: <strong>{{ n.issued_date|date:"d F Y" }}</strong>
+                &bull; Scope: 
+                <strong>
+                    {% if n.target_campus %}{{ n.target_campus.name }}{% else %}All Campuses{% endif %}
+                </strong>
+                {% if n.target_class %}
+                    &bull; Target Class: <strong>{{ n.target_class.name }} ({{ n.target_class.section_or_batch }})</strong>
+                {% endif %}
+            </div>
+            <span style="color:var(--emerald-400); font-weight:600;">Active Broadcast</span>
+        </div>
+
+        <!-- Hidden container holding WhatsApp pre-formatted string -->
+        <div id="wa-text-{{ n.id }}" style="display:none;">{{ n.whatsapp_text }}</div>
+    </div>
+    {% empty %}
+    <div class="card" style="text-align:center; padding:48px; color:var(--slate-400);">
+        📭 No circulars posted matching your filter criteria.
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Modal: Post Notice -->
+<div id="postNoticeModal" class="modal-overlay">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>Publish Official Circular & Parent Notice</h3>
+            <button type="button" onclick="closeModal('postNoticeModal')" style="background:none; border:none; color:var(--slate-400); font-size:1.4rem; cursor:pointer;">&times;</button>
+        </div>
+        <form method="post" action="/notices/">
+            {% csrf_token %}
+            <div class="modal-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="title">Circular Heading (English) *</label>
+                        <input type="text" id="title" name="title" class="form-control" required placeholder="e.g. Monthly Fee Submission Reminder">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="notice_type">Category *</label>
+                        <select id="notice_type" name="notice_type" class="form-control" required>
+                            {% for val, label in notice_types %}
+                                <option value="{{ val }}">{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="urdu_title">Urdu Heading (اردو عنوان)</label>
+                    <input type="text" id="urdu_title" name="urdu_title" class="form-control urdu-text" placeholder="ماہانہ فیس جمع کروانے کا نوٹس">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="content">Announcement Content (English) *</label>
+                    <textarea id="content" name="content" class="form-control" rows="4" required placeholder="Details of notice, deadlines, instructions for students and parents..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="urdu_content">Announcement Content (اردو تفصیل)</label>
+                    <textarea id="urdu_content" name="urdu_content" class="form-control urdu-text" rows="3" placeholder="تمام والدین اور طلبہ کے لیے ضروری ہدایات..."></textarea>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label" for="target_campus_id">Target Campus</label>
+                        <select id="target_campus_id" name="target_campus_id" class="form-control">
+                            <option value="">All Campuses (Entire Institution)</option>
+                            {% for c in campuses %}
+                                <option value="{{ c.id }}">{{ c.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label" for="target_class_id">Target Class Group</label>
+                        <select id="target_class_id" name="target_class_id" class="form-control">
+                            <option value="">All Classes (General Announcement)</option>
+                            {% for cl in classes %}
+                                <option value="{{ cl.id }}">{{ cl.name }} ({{ cl.section_or_batch }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('postNoticeModal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Publish Circular</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal: WhatsApp Copy Broadcast -->
+<div id="whatsAppModal" class="modal-overlay">
+    <div class="modal-card">
+        <div class="modal-header">
+            <h3>💬 WhatsApp Parent Broadcast Bulletin</h3>
+            <button type="button" onclick="closeModal('whatsAppModal')" style="background:none; border:none; color:var(--slate-400); font-size:1.4rem; cursor:pointer;">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="font-size:0.85rem; color:var(--slate-400); margin-bottom:12px;">
+                Copy and paste this pre-formatted broadcast message into your institutional WhatsApp announcement group or broadcast list.
+            </p>
+            <textarea id="wa-broadcast-text" class="form-control" rows="10" readonly style="font-family:monospace; font-size:0.85rem; background:var(--bg-surface-elevated);"></textarea>
+        </div>
+        <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('whatsAppModal')">Close</button>
+            <button type="button" class="btn btn-primary" id="btn-copy-wa" onclick="copyWhatsAppBroadcast()">
+                📋 Copy Broadcast to Clipboard
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+    function showWhatsAppModal(noticeId) {
+        const textContainer = document.getElementById('wa-text-' + noticeId);
+        if (textContainer) {
+            const broadcastArea = document.getElementById('wa-broadcast-text');
+            broadcastArea.value = textContainer.innerText.trim();
+            const copyBtn = document.getElementById('btn-copy-wa');
+            copyBtn.innerText = '📋 Copy Broadcast to Clipboard';
+            openModal('whatsAppModal');
+        }
+    }
+
+    function copyWhatsAppBroadcast() {
+        const broadcastArea = document.getElementById('wa-broadcast-text');
+        broadcastArea.select();
+        navigator.clipboard.writeText(broadcastArea.value).then(() => {
+            const copyBtn = document.getElementById('btn-copy-wa');
+            copyBtn.innerText = '✅ Copied to Clipboard!';
+        });
+    }
+</script>
+{% endblock %}

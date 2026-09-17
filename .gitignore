@@ -16,6 +16,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!classfellow_mobile/lib/
+!classfellow_mobile/lib/**
 parts/
 sdist/
 var/

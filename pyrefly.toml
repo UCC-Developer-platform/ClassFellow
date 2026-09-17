@@ -1,0 +1,5 @@
+# Pyrefly Static Analysis & Language Server Configuration
+# https://pyrefly.org/
+
+python-interpreter-path = ".venv/Scripts/python.exe"
+search-path = [".", "classfellow_web"]

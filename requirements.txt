@@ -24,3 +24,12 @@ pytest-cov>=4.1.0
 
 # Standalone Release Packaging
 pyinstaller>=6.4.0
+
+# Multi-User Web Platform & PostgreSQL Driver (Phase 5)
+django>=5.0,<5.2
+psycopg[binary]>=3.1.18
+djangorestframework>=3.14.0,<3.16.0
+
+# Production WSGI Server & Static Asset Serving (Category 17)
+gunicorn>=21.2.0
+whitenoise>=6.6.0

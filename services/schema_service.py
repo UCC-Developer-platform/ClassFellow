@@ -159,8 +159,11 @@ def migration_v1_initial_schema(conn: sqlite3.Connection) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_enrollments_class_session ON enrollments(class_group_id, session_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_fee_invoices_enrollment ON fee_invoices(enrollment_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_fee_invoices_cycle ON fee_invoices(month_year, session_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_fee_invoices_valid_until ON fee_invoices(valid_until);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_fee_invoices_session_valid ON fee_invoices(session_id, valid_until);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_fee_invoice_items_invoice ON fee_invoice_items(invoice_id);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_invoice ON payments(invoice_id);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_invoice_status_amount ON payments(invoice_id, status, amount);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_payments_receipt_no ON payments(receipt_number);")
 
         # Seed baseline Fee Heads if empty
