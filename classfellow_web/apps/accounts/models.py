@@ -6,6 +6,8 @@ class Role(models.TextChoices):
     ADMIN = "Admin", "Administrator"
     PRINCIPAL = "Principal", "Principal"
     CASHIER = "Cashier", "Cashier"
+    TEACHER = "Teacher", "Teacher"
+    PARENT = "Parent", "Parent"
 
 
 class User(AbstractUser):

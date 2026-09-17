@@ -49,6 +49,10 @@ INSTALLED_APPS = [
     "apps.attendance.apps.AttendanceConfig",
     "apps.examinations.apps.ExaminationsConfig",
     "apps.staff.apps.StaffConfig",
+    "apps.api.apps.ApiConfig",
+    # Third-party REST framework & token auth
+    "rest_framework",
+    "rest_framework.authtoken",
 ]
 
 MIDDLEWARE = [
@@ -144,3 +148,14 @@ INSTITUTION_SYNC_TOKEN = os.environ.get(
     "INSTITUTION_SYNC_TOKEN",
     "classfellow-sync-secret-token-2026",
 )
+
+# Django REST Framework Configuration
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.TokenAuthentication",
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
+    ],
+}

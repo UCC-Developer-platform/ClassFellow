@@ -28,3 +28,4 @@ pyinstaller>=6.4.0
 # Multi-User Web Platform & PostgreSQL Driver (Phase 5)
 django>=5.0,<5.2
 psycopg[binary]>=3.1.18
+djangorestframework>=3.14.0,<3.16.0

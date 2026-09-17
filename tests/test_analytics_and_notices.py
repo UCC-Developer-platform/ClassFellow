@@ -308,8 +308,8 @@ def test_academic_risk_roster_detection(session_fixture, campus_a):
         start_date=datetime.date(2026, 5, 15),
         end_date=datetime.date(2026, 5, 20),
     )
-    sub_math, _ = Subject.objects.get_or_create(code="MATH-8", defaults={"name": "Mathematics"})
-    sub_sci, _ = Subject.objects.get_or_create(code="SCI-8", defaults={"name": "Science"})
+    sub_math, _ = Subject.objects.get_or_create(name="Mathematics", defaults={"code": "MATH-8"})
+    sub_sci, _ = Subject.objects.get_or_create(name="Science", defaults={"code": "SCI-8"})
 
     es_math = ExamSubject.objects.create(
         exam=exam,
