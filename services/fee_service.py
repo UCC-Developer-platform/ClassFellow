@@ -93,7 +93,8 @@ class FeeService:
         due_date: str,
         valid_until: str,
         late_fee_surcharge: Decimal = Decimal("200.00"),
-        specific_enrollment_id: Optional[int] = None
+        specific_enrollment_id: Optional[int] = None,
+        class_group_id: Optional[int] = None
     ) -> int:
         """
         Generates itemized fee vouchers for enrolled students inside an atomic transaction.
@@ -106,6 +107,7 @@ class FeeService:
             valid_until: Tier 2 bank/cashier cutoff date (YYYY-MM-DD).
             late_fee_surcharge: Surcharge applied after due_date.
             specific_enrollment_id: Optional target single enrollment.
+            class_group_id: Optional target class group.
 
         Returns:
             Number of newly generated invoices.
@@ -146,6 +148,9 @@ class FeeService:
         if specific_enrollment_id:
             sql += " AND e.id = ?"
             params.append(specific_enrollment_id)
+        if class_group_id:
+            sql += " AND e.class_group_id = ?"
+            params.append(class_group_id)
 
         cursor.execute(sql, params)
         enrollments = cursor.fetchall()
@@ -453,30 +458,105 @@ class FeeService:
     def get_defaulters_list(
         self,
         session_id: int,
-        month_year: Optional[str] = None
+        month_year: Optional[str] = None,
+        overdue_as_of: Optional[str] = None
     ) -> list[dict[str, Any]]:
         """
         Returns all students with overdue outstanding balances.
+        Performs a single-pass indexed SQL query joining student identity,
+        enrollment details, class information, and payment aggregation.
         """
         cursor = self.conn.cursor()
         sql = """
-        SELECT fi.id
-        FROM fee_invoices fi
-        WHERE fi.session_id = ?
+        WITH candidate_invoices AS (
+            SELECT 
+                fi.id AS invoice_id,
+                fi.id,
+                fi.enrollment_id,
+                fi.session_id,
+                fi.month_year,
+                fi.issue_date,
+                fi.due_date,
+                fi.valid_until,
+                fi.late_fee_surcharge,
+                fi.total_payable,
+                fi.discount_amount,
+                fi.net_due,
+                fi.created_at,
+                COALESCE((
+                    SELECT SUM(CAST(p.amount AS NUMERIC))
+                    FROM payments p
+                    WHERE p.invoice_id = fi.id AND p.status = 'Issued'
+                ), 0.0) AS total_paid
+            FROM fee_invoices fi
+            WHERE fi.session_id = ?
         """
         params: list[Any] = [session_id]
         if month_year:
             sql += " AND fi.month_year = ?"
             params.append(month_year)
+        if overdue_as_of:
+            sql += " AND fi.valid_until < ?"
+            params.append(overdue_as_of)
+
+        sql += """
+        )
+        SELECT 
+            ci.*,
+            s.id AS student_id,
+            s.admission_number,
+            s.first_name,
+            s.last_name,
+            TRIM(s.first_name || ' ' || COALESCE(s.last_name, '')) AS full_name,
+            s.urdu_name AS student_urdu_name,
+            s.guardian_name,
+            s.guardian_urdu_name,
+            s.guardian_phone,
+            e.roll_number,
+            cg.name AS class_name,
+            cg.section_or_batch,
+            cg.group_type,
+            sess.name AS session_name
+        FROM candidate_invoices ci
+        JOIN enrollments e ON ci.enrollment_id = e.id
+        JOIN students s ON e.student_id = s.id
+        JOIN class_groups cg ON e.class_group_id = cg.id
+        JOIN academic_sessions sess ON ci.session_id = sess.id
+        WHERE CAST(ci.net_due AS NUMERIC) > ci.total_paid
+        ORDER BY ci.valid_until ASC, ci.invoice_id ASC;
+        """
 
         cursor.execute(sql, params)
-        invoice_ids = [r["id"] if isinstance(r, sqlite3.Row) else r[0] for r in cursor.fetchall()]
+        rows = cursor.fetchall()
 
+        if not rows:
+            return []
+
+        col_names = [d[0] for d in cursor.description]
         defaulters = []
-        for inv_id in invoice_ids:
-            details = self.get_invoice_details(inv_id)
-            if details and details["current_balance"] > Decimal("0.00"):
-                defaulters.append(details)
+        for r in rows:
+            row_dict = dict(zip(col_names, tuple(r)))
+            net_due = Decimal(str(row_dict["net_due"]))
+            total_paid = Decimal(str(row_dict["total_paid"]))
+            current_balance = max(Decimal("0.00"), net_due - total_paid)
+            late_fee = Decimal(str(row_dict["late_fee_surcharge"]))
+
+            if total_paid == Decimal("0.00"):
+                status = "Unpaid"
+            elif current_balance > Decimal("0.00"):
+                status = "Partially Paid"
+            else:
+                status = "Paid"
+
+            row_dict["total_payable"] = Decimal(str(row_dict["total_payable"]))
+            row_dict["discount_amount"] = Decimal(str(row_dict["discount_amount"]))
+            row_dict["late_fee_surcharge"] = late_fee
+            row_dict["net_due"] = net_due
+            row_dict["net_due_with_late_fee"] = net_due + late_fee
+            row_dict["total_paid"] = total_paid
+            row_dict["current_balance"] = current_balance
+            row_dict["status"] = status
+            defaulters.append(row_dict)
 
         return defaulters
 
