@@ -111,12 +111,14 @@ def set_schema_version(conn: sqlite3.Connection, version: int) -> None:
 def init_database(db_path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
     """
     Creates a connection and runs all pending schema migrations up to the latest version.
+    Ensures baseline zero-state academic session and class group exist.
     
     Returns:
         A fully initialized, migrated sqlite3.Connection instance.
     """
-    from services.schema_service import migrate_to_latest
+    from services.schema_service import migrate_to_latest, seed_default_academic_data
     conn = get_connection(db_path)
     migrate_to_latest(conn)
+    seed_default_academic_data(conn)
     return conn
 

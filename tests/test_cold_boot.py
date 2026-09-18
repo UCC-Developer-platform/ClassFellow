@@ -51,6 +51,13 @@ def test_init_database_on_empty_file(tmp_path):
         }
         for t in expected_tables:
             assert t in tables, f"Expected table '{t}' was not created during cold bootstrap!"
+
+        # Verify baseline academic session and class group seeded on zero-state
+        cur.execute("SELECT COUNT(*) FROM academic_sessions WHERE is_active = 1;")
+        assert cur.fetchone()[0] >= 1
+
+        cur.execute("SELECT COUNT(*) FROM class_groups;")
+        assert cur.fetchone()[0] >= 1
     finally:
         conn.close()
 
@@ -93,5 +100,82 @@ def test_app_cold_start_and_workspace_navigation(tmp_path):
         settings_view._run_db_repair()
         assert "verified & auto-repaired" in settings_view.repair_status_label.cget("text")
 
+    finally:
+        app.destroy()
+
+
+def test_admission_modal_rtl_and_quick_add_class(tmp_path):
+    """
+    Verifies that StudentAdmissionModal enforces RTL justification on Urdu inputs,
+    allows inline class group creation via QuickAddClassModal, and successfully
+    admits a student without validation errors.
+    """
+    if not has_active_display():
+        pytest.skip("Active GUI display not available in this environment.")
+
+    from ui.student_view import StudentAdmissionModal, QuickAddClassModal
+
+    cold_db = str(tmp_path / "admission_test.db")
+    app = ClassFellowApp(db_path=cold_db)
+    try:
+        app.navigate_to("students")
+        student_view = app.views.get("students")
+        assert student_view is not None
+
+        modal = StudentAdmissionModal(student_view)
+        try:
+            # 1. Verify Urdu inputs are Right-to-Left (justify="right")
+            assert modal.urdu_name.cget("justify") == "right"
+            assert modal.guardian_urdu_name.cget("justify") == "right"
+            assert modal.first_name.cget("justify") == "left"
+
+            # 2. Verify baseline class is present in dropdown
+            assert len(modal.class_names) >= 1
+            assert "Class 1 (Section A)" in modal.class_names
+
+            # 3. Test inline QuickAddClassModal
+            quick_modal = QuickAddClassModal(modal)
+            try:
+                quick_modal.name_entry.insert(0, "Class 9")
+                quick_modal.sec_entry.insert(0, "Green")
+                quick_modal.fee_entry.delete(0, "end")
+                quick_modal.fee_entry.insert(0, "3500.00")
+                quick_modal._save_class()
+            finally:
+                quick_modal.destroy()
+
+            # Verify new class is added and automatically selected
+            assert "Class 9 (Green)" in modal.class_names
+            assert modal.class_var.get() == "Class 9 (Green)"
+
+            # 4. Fill student admission data
+            modal.first_name.insert(0, "Abdullah Mohsen")
+            modal.last_name.insert(0, "Butt")
+            modal.urdu_name.insert(0, "بٹ محسن عبداللہ")
+            modal.guardian_name.insert(0, "Mohsen Farhan Butt")
+            modal.guardian_urdu_name.insert(0, "بٹ فرحان محسن")
+            modal.guardian_phone.insert(0, "03213000625")
+            modal.discount_entry.insert(0, "500.00")
+
+            # 5. Submit admission
+            modal._submit_admission()
+
+            # Verify student is admitted in SQLite
+            cur = app.db_conn.cursor()
+            cur.execute("SELECT id, admission_number, first_name, urdu_name, guardian_urdu_name FROM students WHERE guardian_phone = '03213000625';")
+            row = cur.fetchone()
+            assert row is not None
+            assert row[2] == "Abdullah Mohsen"
+            assert row[3] == "بٹ محسن عبداللہ"
+            assert row[4] == "بٹ فرحان محسن"
+
+            # Verify enrollment in the new class
+            cur.execute("SELECT class_group_id FROM enrollments WHERE student_id = ?;", (row[0],))
+            enr_row = cur.fetchone()
+            assert enr_row is not None
+            assert enr_row[0] == modal.class_groups_map["Class 9 (Green)"]
+
+        finally:
+            modal.destroy()
     finally:
         app.destroy()

@@ -305,6 +305,9 @@ def seed_demo_database(db_path: str, verbose: bool = True) -> dict:
     # 2. Class Groups
     if verbose:
         print("[2/7] Creating 3 Class Groups (School & Academy models)...")
+    # Clean up zero-state baseline placeholder if present before populating demo school model
+    conn.execute("DELETE FROM class_groups WHERE name = 'Class 1' AND section_or_batch = 'Section A';")
+    conn.execute("DELETE FROM sqlite_sequence WHERE name = 'class_groups';")
     class_groups = [
         student_svc.create_class_group(
             session_id=session_id,

@@ -78,13 +78,19 @@ def load_configuration() -> dict:
 class SidebarNavButton(ctk.CTkFrame):
     """
     Fixed-width two-column navigation button for sidebar.
-    Guarantees pixel-perfect vertical text alignment regardless of emoji character width.
+    Enforces a strict 40px icon grid column and anchored text to guarantee
+    pixel-perfect vertical alignment across all operating system font renderers.
     """
     def __init__(self, parent, icon: str, title: str, command, **kwargs):
         super().__init__(parent, fg_color="transparent", corner_radius=6, cursor="hand2", height=38, **kwargs)
         self.pack_propagate(False)
+        self.grid_propagate(False)
         self.command = command
         self.is_active = False
+
+        self.grid_columnconfigure(0, minsize=40, weight=0)
+        self.grid_columnconfigure(1, weight=1)
+        self.grid_rowconfigure(0, weight=1)
 
         self.icon_label = ctk.CTkLabel(
             self,
@@ -95,7 +101,7 @@ class SidebarNavButton(ctk.CTkFrame):
             text_color="#F8FAFC",
             cursor="hand2"
         )
-        self.icon_label.pack(side="left", padx=(8, 2), pady=3)
+        self.icon_label.grid(row=0, column=0, padx=(4, 0), sticky="nsew")
 
         self.title_label = ctk.CTkLabel(
             self,
@@ -105,7 +111,7 @@ class SidebarNavButton(ctk.CTkFrame):
             anchor="w",
             cursor="hand2"
         )
-        self.title_label.pack(side="left", fill="x", expand=True, padx=(2, 8), pady=3)
+        self.title_label.grid(row=0, column=1, padx=(6, 8), sticky="nsew")
 
         for widget in (self, self.icon_label, self.title_label):
             widget.bind("<Button-1>", lambda e: self._on_click())
@@ -198,9 +204,9 @@ class ClassFellowApp(ctk.CTk):
 
         nav_items = [
             ("📊", "Dashboard", "dashboard"),
-            ("👨‍🎓", "Students", "students"),
+            ("🎓", "Students", "students"),
             ("💳", "Fees & Receipts", "fees"),
-            ("🗓️", "Attendance", "attendance"),
+            ("📅", "Attendance", "attendance"),
             ("📝", "Examinations", "examinations"),
             ("⚙️", "Settings", "settings"),
         ]

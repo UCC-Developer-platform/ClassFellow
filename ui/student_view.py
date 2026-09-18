@@ -6,6 +6,7 @@ and modal dialog for new student admission mutations.
 """
 
 import os
+import sqlite3
 import logging
 from decimal import Decimal
 from typing import Dict, Any, Optional, List
@@ -282,8 +283,124 @@ class StudentView(BaseView):
 
 
 # =============================================================================
-# Modal Dialog: New Student Admission
+# Modal Dialog: Quick Add Class Group (Inline Sub-Modal)
 # =============================================================================
+
+class QuickAddClassModal(BaseModal):
+    """
+    Lightweight modal dialog allowing clerks to create a new Class Group on the fly
+    without leaving or clearing the Student Admission form.
+    """
+    def __init__(self, parent_admission_modal: "StudentAdmissionModal"):
+        super().__init__(parent_admission_modal, title="➕ Quick Add Class Group", width=440, height=360)
+        self.admission_modal = parent_admission_modal
+        self._build_fields()
+
+    def _build_fields(self) -> None:
+        body = ctk.CTkFrame(self.card, fg_color="transparent")
+        body.pack(fill="both", expand=True, padx=16, pady=4)
+
+        # 1. Class Name
+        f1 = ctk.CTkFrame(body, fg_color="transparent")
+        f1.pack(fill="x", pady=4)
+        ctk.CTkLabel(f1, text="Class Name *:", width=130, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.name_entry = ctk.CTkEntry(f1, placeholder_text="e.g. Class 9, Prep", width=220)
+        self.name_entry.pack(side="left")
+
+        # 2. Section / Batch
+        f2 = ctk.CTkFrame(body, fg_color="transparent")
+        f2.pack(fill="x", pady=4)
+        ctk.CTkLabel(f2, text="Section / Batch *:", width=130, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.sec_entry = ctk.CTkEntry(f2, placeholder_text="e.g. Section A, Green", width=220)
+        self.sec_entry.pack(side="left")
+
+        # 3. Monthly Tuition Fee
+        f3 = ctk.CTkFrame(body, fg_color="transparent")
+        f3.pack(fill="x", pady=4)
+        ctk.CTkLabel(f3, text="Monthly Fee (PKR):", width=130, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.fee_entry = ctk.CTkEntry(f3, placeholder_text="e.g. 3500.00", width=220)
+        self.fee_entry.insert(0, "3000.00")
+        self.fee_entry.pack(side="left")
+
+        # 4. Group Type
+        f4 = ctk.CTkFrame(body, fg_color="transparent")
+        f4.pack(fill="x", pady=4)
+        ctk.CTkLabel(f4, text="Class Type:", width=130, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.type_var = ctk.StringVar(value="SchoolClass")
+        ctk.CTkOptionMenu(f4, values=["SchoolClass", "AcademyBatch"], variable=self.type_var, width=220).pack(side="left")
+
+        # Buttons
+        btn_box = ctk.CTkFrame(self.card, fg_color="transparent")
+        btn_box.pack(fill="x", padx=16, pady=(10, 14))
+
+        ctk.CTkButton(
+            btn_box, text="Cancel", width=90, fg_color=THEME_COLORS["border_color"],
+            hover_color="#334155", command=self.close
+        ).pack(side="right", padx=6)
+
+        ctk.CTkButton(
+            btn_box, text="Save & Select", width=120,
+            fg_color=THEME_COLORS["brand_primary"], hover_color=THEME_COLORS["brand_accent"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self._save_class
+        ).pack(side="right", padx=6)
+
+    def _save_class(self) -> None:
+        name = self.name_entry.get().strip()
+        sec = self.sec_entry.get().strip()
+        fee_str = self.fee_entry.get().strip() or "0.00"
+        group_type = self.type_var.get()
+
+        if not name or not sec:
+            return
+
+        try:
+            fee = Decimal(fee_str)
+        except Exception:
+            fee = Decimal("0.00")
+
+        conn = self.admission_modal.parent_view.db_conn
+        if not conn:
+            return
+
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM academic_sessions WHERE is_active = 1 LIMIT 1;")
+        s_row = cur.fetchone()
+        if not s_row:
+            cur.execute("""
+                INSERT OR IGNORE INTO academic_sessions (name, start_date, end_date, is_active)
+                VALUES ('2026-2027', '2026-04-01', '2027-03-31', 1);
+            """)
+            cur.execute("SELECT id FROM academic_sessions WHERE name = '2026-2027';")
+            s_row = cur.fetchone()
+        session_id = s_row[0] if s_row else 1
+
+        try:
+            cur.execute("""
+                INSERT INTO class_groups (session_id, name, section_or_batch, group_type, monthly_tuition_fee)
+                VALUES (?, ?, ?, ?, ?);
+            """, (session_id, name, sec, group_type, str(fee)))
+            new_id = cur.lastrowid
+            display_name = f"{name} ({sec})"
+            self.admission_modal.on_class_created(new_id, display_name)
+            self.close()
+        except sqlite3.IntegrityError:
+            cur.execute("SELECT id FROM class_groups WHERE session_id = ? AND name = ? AND section_or_batch = ?;",
+                        (session_id, name, sec))
+            existing = cur.fetchone()
+            if existing:
+                display_name = f"{name} ({sec})"
+                self.admission_modal.on_class_created(existing[0], display_name)
+                self.close()
+
+    def close(self) -> None:
+        super().close()
+        try:
+            self.admission_modal.grab_set()
+            self.admission_modal.focus_force()
+        except Exception:
+            pass
+
 
 class StudentAdmissionModal(BaseModal):
     """Focus-trapped modal dialog for student registration."""
@@ -292,8 +409,8 @@ class StudentAdmissionModal(BaseModal):
         super().__init__(
             parent_view,
             title="New Student Admission",
-            width=540,
-            height=580
+            width=560,
+            height=620
         )
         self.parent_view = parent_view
         self.student_service = parent_view.student_service
@@ -308,7 +425,7 @@ class StudentAdmissionModal(BaseModal):
         # 1. Names
         self.first_name = self._add_entry(form_scroll, "First Name *:", "e.g. Muhammad")
         self.last_name = self._add_entry(form_scroll, "Last Name:", "e.g. Ali")
-        self.urdu_name = self._add_entry(form_scroll, "Urdu Name:", "مثال: محمد علی")
+        self.urdu_name = self._add_entry(form_scroll, "Urdu Name:", "مثال: محمد علی", is_rtl=True)
 
         # 2. Gender
         gender_frame = ctk.CTkFrame(form_scroll, fg_color="transparent")
@@ -325,6 +442,7 @@ class StudentAdmissionModal(BaseModal):
 
         # 3. Guardian Info
         self.guardian_name = self._add_entry(form_scroll, "Guardian Name *:", "Father / Guardian full name")
+        self.guardian_urdu_name = self._add_entry(form_scroll, "Guardian Urdu:", "والد / سرپرست کا نام", is_rtl=True)
         self.guardian_phone = self._add_entry(form_scroll, "Guardian Phone *:", "03001234567 (11 digits)")
 
         # 4. Class Group Selection
@@ -336,19 +454,30 @@ class StudentAdmissionModal(BaseModal):
         ).pack(side="left")
 
         self.class_groups_map: Dict[str, int] = {}
-        if self.parent_view.db_conn:
-            cur = self.parent_view.db_conn.cursor()
-            cur.execute("SELECT id, name, section_or_batch FROM class_groups ORDER BY name;")
-            for row in cur.fetchall():
-                display_name = f"{row[1]} ({row[2]})"
-                self.class_groups_map[display_name] = row[0]
+        self._refresh_class_groups()
 
-        class_names = list(self.class_groups_map.keys()) or ["Default Class"]
-        self.class_var = ctk.StringVar(value=class_names[0])
+        initial_class = self.class_names[0] if self.class_names else "Default Class"
+        self.class_var = ctk.StringVar(value=initial_class)
         self.class_menu = ctk.CTkOptionMenu(
-            class_frame, values=class_names, variable=self.class_var, width=220
+            class_frame, values=self.class_names or ["Default Class"], variable=self.class_var, width=185
         )
-        self.class_menu.pack(side="left")
+        self.class_menu.pack(side="left", padx=(0, 6))
+
+        # Inline "➕ New Class" sub-modal button
+        add_class_btn = ctk.CTkButton(
+            class_frame,
+            text="➕ New Class",
+            width=90,
+            height=28,
+            font=ctk.CTkFont(size=11, weight="bold"),
+            fg_color="#1E293B",
+            hover_color="#334155",
+            border_width=1,
+            border_color="#10B981",
+            text_color="#10B981",
+            command=self._open_quick_add_class
+        )
+        add_class_btn.pack(side="left")
 
         # 5. Monthly Fee Discount
         self.discount_entry = self._add_entry(form_scroll, "Monthly Discount (PKR):", "0.00")
@@ -370,11 +499,39 @@ class StudentAdmissionModal(BaseModal):
         )
         btn_save.pack(side="right", padx=6)
 
-    def _add_entry(self, parent, label: str, placeholder: str) -> ctk.CTkEntry:
+    def _refresh_class_groups(self) -> None:
+        """Reloads class groups from database and updates internal lookup map."""
+        self.class_groups_map = {}
+        if self.parent_view.db_conn:
+            cur = self.parent_view.db_conn.cursor()
+            cur.execute("SELECT id, name, section_or_batch FROM class_groups ORDER BY name, section_or_batch;")
+            for row in cur.fetchall():
+                display_name = f"{row[1]} ({row[2]})"
+                self.class_groups_map[display_name] = row[0]
+        self.class_names = list(self.class_groups_map.keys())
+
+    def _open_quick_add_class(self) -> None:
+        """Opens lightweight modal to add a class group on the fly."""
+        QuickAddClassModal(self)
+
+    def on_class_created(self, class_id: int, display_name: str) -> None:
+        """Callback invoked by QuickAddClassModal when a class is created."""
+        self._refresh_class_groups()
+        if hasattr(self, "class_menu"):
+            self.class_menu.configure(values=self.class_names)
+            self.class_var.set(display_name)
+
+    def _add_entry(self, parent, label: str, placeholder: str, is_rtl: bool = False) -> ctk.CTkEntry:
         f = ctk.CTkFrame(parent, fg_color="transparent")
         f.pack(fill="x", pady=4)
         ctk.CTkLabel(f, text=label, width=140, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        e = ctk.CTkEntry(f, placeholder_text=placeholder, width=280)
+        e = ctk.CTkEntry(
+            f,
+            placeholder_text=placeholder,
+            width=280,
+            justify="right" if is_rtl else "left",
+            font=ctk.CTkFont(family="Segoe UI", size=13) if is_rtl else None
+        )
         e.pack(side="left")
         return e
 
@@ -385,6 +542,7 @@ class StudentAdmissionModal(BaseModal):
         un = self.urdu_name.get().strip() or None
         gender = self.gender_var.get()
         gn = self.guardian_name.get().strip()
+        gun = self.guardian_urdu_name.get().strip() or None
         phone = self.guardian_phone.get().strip()
         selected_class = self.class_var.get()
         class_id = self.class_groups_map.get(selected_class)
@@ -419,6 +577,7 @@ class StudentAdmissionModal(BaseModal):
                 urdu_name=un,
                 gender=gender,
                 guardian_name=gn,
+                guardian_urdu_name=gun,
                 guardian_phone=phone,
             )
             student_id, enrollment_id = self.student_service.register_student(

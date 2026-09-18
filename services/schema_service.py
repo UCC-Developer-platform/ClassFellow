@@ -354,3 +354,30 @@ def migrate_to_latest(conn: sqlite3.Connection) -> int:
     return get_schema_version(conn)
 
 
+def seed_default_academic_data(conn: sqlite3.Connection) -> None:
+    """
+    Ensures at least one active academic session and baseline class group exist.
+    Prevents empty-state dropdown blockers during student admission on fresh zero-state installs.
+    """
+    with conn:
+        cur = conn.cursor()
+        cur.execute("SELECT id FROM academic_sessions WHERE is_active = 1 LIMIT 1;")
+        row = cur.fetchone()
+        if not row:
+            cur.execute("""
+                INSERT OR IGNORE INTO academic_sessions (name, start_date, end_date, is_active)
+                VALUES ('2026-2027', '2026-04-01', '2027-03-31', 1);
+            """)
+            cur.execute("SELECT id FROM academic_sessions WHERE name = '2026-2027';")
+            row = cur.fetchone()
+
+        session_id = row[0] if row else 1
+
+        cur.execute("SELECT COUNT(*) FROM class_groups;")
+        if cur.fetchone()[0] == 0:
+            cur.execute("""
+                INSERT OR IGNORE INTO class_groups (session_id, name, section_or_batch, group_type, monthly_tuition_fee)
+                VALUES (?, 'Class 1', 'Section A', 'SchoolClass', '2500.00');
+            """, (session_id,))
+
+

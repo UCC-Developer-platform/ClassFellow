@@ -82,7 +82,7 @@ def test_wal_checkpoint_and_integrity_verification(perf_db):
     conn, db_path = perf_db
 
     # Insert a minimal session
-    conn.execute("INSERT INTO academic_sessions (name, start_date, end_date) VALUES ('2026-2027', '2026-04-01', '2027-03-31');")
+    conn.execute("INSERT OR IGNORE INTO academic_sessions (name, start_date, end_date) VALUES ('2026-2027', '2026-04-01', '2027-03-31');")
     conn.commit()
 
     integrity = verify_database_integrity(conn)

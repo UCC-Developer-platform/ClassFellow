@@ -90,9 +90,13 @@ class StudentService:
         end_date: str,
         is_active: bool = True
     ) -> int:
-        """Creates an academic session (e.g., '2025-2026')."""
+        """Creates an academic session (e.g., '2026-2027') or returns existing ID if it already exists."""
         with self.conn:
             cursor = self.conn.cursor()
+            cursor.execute("SELECT id FROM academic_sessions WHERE name = ?;", (name.strip(),))
+            row = cursor.fetchone()
+            if row:
+                return row[0]
             cursor.execute(
                 """
                 INSERT INTO academic_sessions (name, start_date, end_date, is_active)

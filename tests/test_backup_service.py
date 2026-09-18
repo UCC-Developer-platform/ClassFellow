@@ -36,7 +36,7 @@ def populated_db(tmp_path):
 
     # Insert baseline test data
     conn.execute(
-        "INSERT INTO academic_sessions (name, start_date, end_date, is_active) "
+        "INSERT OR IGNORE INTO academic_sessions (name, start_date, end_date, is_active) "
         "VALUES ('2026-2027', '2026-04-01', '2027-03-31', 1);"
     )
     conn.execute(
