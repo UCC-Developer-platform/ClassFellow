@@ -118,9 +118,14 @@ class AttendanceView(BaseView):
         """Loads available class groups into dropdown."""
         if not self.db_conn:
             return
-        cur = self.db_conn.cursor()
-        cur.execute("SELECT id, name, section_or_batch FROM class_groups ORDER BY name;")
-        rows = cur.fetchall()
+        try:
+            cur = self.db_conn.cursor()
+            cur.execute("SELECT id, name, section_or_batch FROM class_groups ORDER BY name;")
+            rows = cur.fetchall()
+        except Exception as exc:
+            logger.warning(f"Error loading class groups: {exc}")
+            rows = []
+
         self.classes_map.clear()
         opts = []
         for r in rows:
@@ -132,6 +137,9 @@ class AttendanceView(BaseView):
             self.class_menu.configure(values=opts)
             self.class_var.set(opts[0])
             self.refresh_data()
+        else:
+            self.class_menu.configure(values=["No Classes Available"])
+            self.class_var.set("No Classes Available")
 
     def refresh_data(self) -> None:
         """Loads class roster for chosen date and populates attendance rows."""
@@ -156,15 +164,26 @@ class AttendanceView(BaseView):
 
         try:
             roster = self.attendance_service.load_class_roster_for_attendance(class_group_id=class_id, date=att_date)
-            if not roster:
-                no_lbl = ctk.CTkLabel(
-                    self.table_scroll, text="No enrolled students found in this class.",
-                    font=ctk.CTkFont(size=13), text_color=self.colors["text_muted"]
-                )
-                no_lbl.pack(pady=30)
-                self.stats_lbl.configure(text="Students: 0  |  Present: 0  |  Absent: 0  |  Attendance: 0%")
-                return
+        except Exception as exc:
+            logger.warning(f"Error loading attendance roster: {exc}")
+            no_lbl = ctk.CTkLabel(
+                self.table_scroll, text="No attendance roster available (Database table may be initializing).",
+                font=ctk.CTkFont(size=13), text_color=self.colors["text_muted"]
+            )
+            no_lbl.pack(pady=30)
+            self.stats_lbl.configure(text="Students: 0  |  Present: 0  |  Absent: 0  |  Attendance: 0%")
+            return
 
+        if not roster:
+            no_lbl = ctk.CTkLabel(
+                self.table_scroll, text="No enrolled students found in this class.",
+                font=ctk.CTkFont(size=13), text_color=self.colors["text_muted"]
+            )
+            no_lbl.pack(pady=30)
+            self.stats_lbl.configure(text="Students: 0  |  Present: 0  |  Absent: 0  |  Attendance: 0%")
+            return
+
+        try:
             present_count = 0
             absent_count = 0
 

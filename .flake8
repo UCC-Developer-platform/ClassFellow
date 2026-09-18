@@ -1,0 +1,12 @@
+[flake8]
+max-line-length = 127
+extend-ignore = E203, W503
+exclude =
+    .venv,
+    build,
+    dist,
+    __pycache__,
+    .git,
+    */migrations/*,
+    data,
+    classfellow_mobile

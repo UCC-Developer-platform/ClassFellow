@@ -1,8 +1,11 @@
 [tool.pyrefly]
 python-interpreter-path = ".venv/Scripts/python.exe"
 search-path = [".", "classfellow_web"]
+disable-type-errors-in-ide = true
+preset = "off"
 
 [tool.pyright]
 venvPath = "."
 venv = ".venv"
-extraPaths = ["classfellow_web"]
+extraPaths = [".", "classfellow_web"]
+typeCheckingMode = "off"

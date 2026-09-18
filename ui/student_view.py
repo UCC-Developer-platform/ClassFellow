@@ -158,12 +158,23 @@ class StudentView(BaseView):
         if status_filter in ("All", "Withdrawn Only"):
             active_only = False
 
-        students = self.student_service.search_students(
-            query=search_term,
-            active_only=active_only
-        )
-        if status_filter == "Withdrawn Only":
-            students = [s for s in students if not s.get("is_active")]
+        try:
+            students = self.student_service.search_students(
+                query=search_term,
+                active_only=active_only
+            )
+            if status_filter == "Withdrawn Only":
+                students = [s for s in students if not s.get("is_active")]
+        except Exception as exc:
+            logger.warning(f"Error querying student records: {exc}")
+            no_lbl = ctk.CTkLabel(
+                self.table_scroll,
+                text="No student records available (Database table may be initializing).",
+                font=ctk.CTkFont(size=13),
+                text_color=self.colors["text_muted"]
+            )
+            no_lbl.pack(pady=30)
+            return
 
         if not students:
             no_lbl = ctk.CTkLabel(

@@ -116,32 +116,44 @@ class ExamView(BaseView):
         """Loads available exams and class groups into dropdowns."""
         if not self.db_conn:
             return
-        cur = self.db_conn.cursor()
 
-        # Load Exams
-        cur.execute("SELECT id, name FROM exams ORDER BY id DESC;")
-        exams = cur.fetchall()
-        self.exams_map.clear()
         ex_opts = []
-        for e in exams:
-            self.exams_map[e[1]] = e[0]
-            ex_opts.append(e[1])
+        cl_opts = []
+        try:
+            cur = self.db_conn.cursor()
+
+            # Load Exams
+            cur.execute("SELECT id, name FROM exams ORDER BY id DESC;")
+            exams = cur.fetchall()
+            self.exams_map.clear()
+            for e in exams:
+                self.exams_map[e[1]] = e[0]
+                ex_opts.append(e[1])
+
+            # Load Classes
+            cur.execute("SELECT id, name, section_or_batch FROM class_groups ORDER BY name;")
+            classes = cur.fetchall()
+            self.classes_map.clear()
+            for c in classes:
+                disp = f"{c[1]} ({c[2]})"
+                self.classes_map[disp] = c[0]
+                cl_opts.append(disp)
+        except Exception as exc:
+            logger.warning(f"Error loading exam selectors: {exc}")
+
         if ex_opts:
             self.exam_menu.configure(values=ex_opts)
             self.exam_var.set(ex_opts[0])
+        else:
+            self.exam_menu.configure(values=["No Exams Available"])
+            self.exam_var.set("No Exams Available")
 
-        # Load Classes
-        cur.execute("SELECT id, name, section_or_batch FROM class_groups ORDER BY name;")
-        classes = cur.fetchall()
-        self.classes_map.clear()
-        cl_opts = []
-        for c in classes:
-            disp = f"{c[1]} ({c[2]})"
-            self.classes_map[disp] = c[0]
-            cl_opts.append(disp)
         if cl_opts:
             self.class_menu.configure(values=cl_opts)
             self.class_var.set(cl_opts[0])
+        else:
+            self.class_menu.configure(values=["No Classes Available"])
+            self.class_var.set("No Classes Available")
 
         if ex_opts and cl_opts:
             self.refresh_data()
@@ -170,16 +182,28 @@ class ExamView(BaseView):
 
         try:
             results = self.exam_service.calculate_class_results(exam_id=exam_id, class_group_id=class_id)
-            if not results:
-                no_lbl = ctk.CTkLabel(
-                    self.table_scroll,
-                    text="No examination results or marks registered for this class.",
-                    font=ctk.CTkFont(size=13),
-                    text_color=self.colors["text_muted"]
-                )
-                no_lbl.pack(pady=30)
-                return
+        except Exception as exc:
+            logger.warning(f"Error calculating class exam results: {exc}")
+            no_lbl = ctk.CTkLabel(
+                self.table_scroll,
+                text="No examination results available (Database table may be initializing).",
+                font=ctk.CTkFont(size=13),
+                text_color=self.colors["text_muted"]
+            )
+            no_lbl.pack(pady=30)
+            return
 
+        if not results:
+            no_lbl = ctk.CTkLabel(
+                self.table_scroll,
+                text="No marks records found for this class in selected examination cycle.",
+                font=ctk.CTkFont(size=13),
+                text_color=self.colors["text_muted"]
+            )
+            no_lbl.pack(pady=30)
+            return
+
+        try:
             for idx, r in enumerate(results):
                 bg = self.colors["bg_app"] if idx % 2 == 0 else self.colors["bg_row_alt"]
                 row_frame = ctk.CTkFrame(self.table_scroll, fg_color=bg, corner_radius=4, height=36)

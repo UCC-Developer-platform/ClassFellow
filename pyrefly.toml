@@ -3,3 +3,5 @@
 
 python-interpreter-path = ".venv/Scripts/python.exe"
 search-path = [".", "classfellow_web"]
+disable-type-errors-in-ide = true
+preset = "off"

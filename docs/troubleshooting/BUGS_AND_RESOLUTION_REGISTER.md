@@ -2,8 +2,8 @@
 
 **Document Reference**: `docs/troubleshooting/BUGS_AND_RESOLUTION_REGISTER.md`  
 **Tracking Cycle**: Phase 9 Desktop Physical Auditing & Field Validation  
-**Current Status**: **ACTIVE ISSUE REGISTER — PENDING ARCHITECTURAL SIGN-OFF**  
-**Associated Baseline**: Release `v1.0.0-enterprise` / MVP Portable USB Build (Commit `62df58c`)  
+**Current Status**: **DEFECTS RESOLVED & VERIFIED (OPTION B IMPLEMENTED & COMPILED)**  
+**Associated Baseline**: Release `v1.0.0-enterprise` / MVP Portable USB Build (Commit `2acc34d` $\rightarrow$ Option B Fixes)  
 **Target Environments**: Windows 11 (64-bit Desktop), SQLite WAL Engine, CustomTkinter Runtime  
 
 ---
@@ -29,9 +29,12 @@ This document serves as the permanent, authoritative **Bug Register & Troublesho
 │                                                     │                                  │
 │                                                     ▼                                  │
 │   [ Code Execution Held ] ◄──────── [ Multi-Option Solution Trade-Off Analysis ]      │
-│            │                                                                           │
-│            ▼                                                                           │
-│   [ Chief Architect & GEM Review ] ──► [ Authorized Implementation & Verification ]    │
+│            │                                        │                                  │
+│            ▼                                        ▼                                  │
+│   [ Chief Architect & GEM Review ] ──► [ Option B Authorized & Implemented ]          │
+│                                                     │                                  │
+│                                                     ▼                                  │
+│   [ Standalone USB Recompiled ] ◄─── [ Automated Cold-Boot Regression Passed ]         │
 │                                                                                        │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -42,9 +45,9 @@ This document serves as the permanent, authoritative **Bug Register & Troublesho
 
 | Defect ID | Severity | Affected Module | Short Summary | Status |
 | :--- | :---: | :--- | :--- | :---: |
-| **BUG-001** | **CRITICAL** | Core Kernel / Navigation | Unmigrated SQLite database on cold start crashes Student, Attendance, and Exam views; tabs appear dead/unclickable. | **ANALYZED** |
-| **BUG-002** | **MEDIUM** | Shell UI / Sidebar | Sidebar navigation tabs exhibit jagged horizontal text misalignment due to multi-byte emoji font bounding boxes. | **ANALYZED** |
-| **BUG-003** | **HIGH** | Settings Workspace | Settings page displays cosmetic "ENABLED" green pills from static JSON without verifying runtime database health ("Fake Indicators"). | **ANALYZED** |
+| **BUG-001** | **CRITICAL** | Core Kernel / Navigation | Unmigrated SQLite database on cold start crashes Student, Attendance, and Exam views; tabs appear dead/unclickable. | **RESOLVED** |
+| **BUG-002** | **MEDIUM** | Shell UI / Sidebar | Sidebar navigation tabs exhibit jagged horizontal text misalignment due to multi-byte emoji font bounding boxes. | **RESOLVED** |
+| **BUG-003** | **HIGH** | Settings Workspace | Settings page displays cosmetic "ENABLED" green pills from static JSON without verifying runtime database health ("Fake Indicators"). | **RESOLVED** |
 
 ---
 
@@ -231,15 +234,29 @@ This document serves as the permanent, authoritative **Bug Register & Troublesho
   3. **Actionable Operator Controls**:
      - Add a prominent button: **`🛠️ Run Schema Verification & Auto-Repair`**. Clicking it executes `init_database()`, repairs missing tables/indices, and refreshes the indicators with verified operational status.
 
+## Action Plan & Architectural Implementation (Option B)
+
+| Defect ID | Action Item | Target Files | Implementation Summary | Status |
+| :--- | :--- | :--- | :--- | :---: |
+| **BUG-001** | Cold-Start Self-Healing Bootstrap & View Guards | `app/app.py`, `ui/student_view.py`, `ui/attendance_view.py`, `ui/exam_view.py` | App launch calls `init_database()` triggering `migrate_to_latest()`; `navigate_to()` wraps view creation in error recovery card; all views guard table queries with empty states. | **RESOLVED** |
+| **BUG-002** | Pixel-Perfect Sidebar Alignment | `app/app.py` (`SidebarNavButton`) | Two-column compound layout with centered 36px icon container and uniform text starting at identical horizontal pixel coordinates. Active state in emerald green. | **RESOLVED** |
+| **BUG-003** | Active System Diagnostics & Database Health | `ui/settings_view.py` | Replaced cosmetic badges with live engine metrics (connection, WAL, PRAGMA user_version=3, file size), live row-count table probes, and a 1-click `🛠️ Verify & Auto-Repair Database` button. | **RESOLVED** |
+
 ---
 
-## Action Plan & Architectural Next Steps
+## Verification & Validation Evidence
 
-| Action Item | Target Files | Objective |
-| :--- | :--- | :--- |
-| **Fix 1: Cold-Start Bootstrapping** | `app/app.py`, `database.py` | Call `init_database()` on startup; auto-migrate missing tables; add view instantiation exception guards. |
-| **Fix 2: Pixel-Perfect Sidebar Alignment** | `app/app.py` | Implement fixed-width icon column and uniform text margin for sidebar navigation. |
-| **Fix 3: Live Health Monitor in Settings** | `ui/settings_view.py` | Replace static JSON badges with live database table checks, record counts, and a 1-click database repair utility. |
-| **Fix 4: Recompile & Repackage** | PyInstaller build | Rebuild `dist\ClassFellow\ClassFellow.exe` and update `dist\ClassFellow_Portable_USB\`. |
-
-*Note: In accordance with project governance, all code changes remain on hold pending Chief Architect and GEM AI review.*
+1. **Automated Cold-Start Regression Suite**:
+   - Authored `tests/test_cold_boot.py`:
+     - `test_init_database_on_empty_file`: Verified on brand-new 0-byte SQLite database that `init_database()` builds all 15 relational tables and sets `user_version = 3`.
+     - `test_app_cold_start_and_workspace_navigation`: Verified `ClassFellowApp` starts against unmigrated database, navigates through all 6 workspaces without errors, verifies two-column button alignment, and tests Settings live health telemetry and auto-repair utility.
+2. **Full Test Suite Execution**:
+   - `pytest -q`: **179/179 PASSED** (0 failures, 100% green across all 25 test suites in 31.94s).
+3. **Standalone Production Binary Recompilation**:
+   - Recompiled via PyInstaller: `dist\ClassFellow\ClassFellow.exe`.
+   - Verified process launch without crash (PID 33408).
+   - SHA-256 Digest: `B61BE4BBA7CD34BC586E29E1CB44D7CF1672A7DAD4BD23FB5EA68CBA2E8938E9`.
+4. **USB Flash Drive Distribution Payload Updated**:
+   - Synced fresh executable and runtime assets to `dist\ClassFellow_Portable_USB\ClassFellow\`.
+   - Updated `dist\ClassFellow_Portable_USB\04_Verification_Tools\checksums.sha256`.
+   - Ready for physical re-testing by Chief Architect on Windows 11.

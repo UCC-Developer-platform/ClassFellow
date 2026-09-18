@@ -22,7 +22,7 @@ else:
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
-from database import get_connection
+from database import get_connection, init_database
 from services.backup_service import BackupService
 from ui import (
     has_active_display,
@@ -75,6 +75,65 @@ def load_configuration() -> dict:
     return config
 
 
+class SidebarNavButton(ctk.CTkFrame):
+    """
+    Fixed-width two-column navigation button for sidebar.
+    Guarantees pixel-perfect vertical text alignment regardless of emoji character width.
+    """
+    def __init__(self, parent, icon: str, title: str, command, **kwargs):
+        super().__init__(parent, fg_color="transparent", corner_radius=6, cursor="hand2", height=38, **kwargs)
+        self.pack_propagate(False)
+        self.command = command
+        self.is_active = False
+
+        self.icon_label = ctk.CTkLabel(
+            self,
+            text=icon,
+            width=36,
+            font=ctk.CTkFont(size=15),
+            anchor="center",
+            text_color="#F8FAFC",
+            cursor="hand2"
+        )
+        self.icon_label.pack(side="left", padx=(8, 2), pady=3)
+
+        self.title_label = ctk.CTkLabel(
+            self,
+            text=title,
+            font=ctk.CTkFont(size=13),
+            text_color="#F8FAFC",
+            anchor="w",
+            cursor="hand2"
+        )
+        self.title_label.pack(side="left", fill="x", expand=True, padx=(2, 8), pady=3)
+
+        for widget in (self, self.icon_label, self.title_label):
+            widget.bind("<Button-1>", lambda e: self._on_click())
+            widget.bind("<Enter>", lambda e: self._on_enter())
+            widget.bind("<Leave>", lambda e: self._on_leave())
+
+    def _on_click(self):
+        if self.command:
+            self.command()
+
+    def _on_enter(self):
+        if not self.is_active:
+            self.configure(fg_color="#1E293B")
+
+    def _on_leave(self):
+        if not self.is_active:
+            self.configure(fg_color="transparent")
+
+    def set_active(self, active: bool):
+        self.is_active = active
+        if active:
+            self.configure(fg_color="#1E293B")
+            self.title_label.configure(text_color="#10B981", font=ctk.CTkFont(size=13, weight="bold"))
+        else:
+            self.configure(fg_color="transparent")
+            self.title_label.configure(text_color="#F8FAFC", font=ctk.CTkFont(size=13, weight="normal"))
+
+
 class ClassFellowApp(ctk.CTk):
     """Main desktop application window for ClassFellow."""
 
@@ -92,10 +151,13 @@ class ClassFellowApp(ctk.CTk):
         # Load configurations
         self.config = load_configuration()
 
-        # Verify database connection
+        # Verify database connection and automatically bootstrap missing schema migrations (PRAGMA user_version < 3)
         self.db_path = db_path
-        self.db_conn = get_connection(db_path) if db_path else get_connection()
+        self.db_conn = init_database(db_path) if db_path else init_database()
         self.backup_service = BackupService(self.db_conn, self.db_path)
+
+        self.sidebar_buttons = {}
+        self._error_card_frame = None
 
         self._build_shell_ui()
 
@@ -135,31 +197,29 @@ class ClassFellowApp(ctk.CTk):
         self.sidebar_frame.grid(row=1, column=0, sticky="nsew")
 
         nav_items = [
-            ("📊 Dashboard", "dashboard"),
-            ("👨‍🎓 Students", "students"),
-            ("💳 Fees & Receipts", "fees"),
-            ("🗓️ Attendance", "attendance"),
-            ("📝 Examinations", "examinations"),
-            ("⚙️ Settings", "settings"),
+            ("📊", "Dashboard", "dashboard"),
+            ("👨‍🎓", "Students", "students"),
+            ("💳", "Fees & Receipts", "fees"),
+            ("🗓️", "Attendance", "attendance"),
+            ("📝", "Examinations", "examinations"),
+            ("⚙️", "Settings", "settings"),
         ]
 
         active_modules = self.config.get("modules", {})
-        for label, mod_key in nav_items:
+        self.sidebar_buttons.clear()
+        for icon, label, mod_key in nav_items:
             # Check dynamic module entitlement
             if mod_key in active_modules and not active_modules[mod_key]:
                 continue  # Gracefully hide unpurchased / disabled modules
 
-            btn = ctk.CTkButton(
+            btn = SidebarNavButton(
                 self.sidebar_frame,
-                text=label,
-                anchor="w",
-                fg_color="transparent",
-                text_color="#F8FAFC",
-                hover_color="#1E293B",
-                font=ctk.CTkFont(size=13),
+                icon=icon,
+                title=label,
                 command=lambda k=mod_key: self._on_navigate(k)
             )
-            btn.pack(fill="x", padx=10, pady=5)
+            btn.pack(fill="x", padx=10, pady=4)
+            self.sidebar_buttons[mod_key] = btn
 
         # 3. Main Workspace Area
         self.workspace_frame = ctk.CTkFrame(self, corner_radius=8, fg_color="#0F172A")
@@ -183,9 +243,9 @@ class ClassFellowApp(ctk.CTk):
         """
         Dynamically swaps active workspace view inside self.workspace_frame.
         Enforces commercial feature-flag entitlements from config/modules.json.
+        Guards against unhandled instantiation errors by rendering an in-window recovery card.
         """
         active_modules = self.config.get("modules", {})
-        # Dashboard and Settings are core views; others check active module feature flags
         if module_key not in ("dashboard", "settings"):
             if module_key in active_modules and not active_modules[module_key]:
                 logging.getLogger(__name__).warning(f"Navigation blocked: {module_key} is unlicensed.")
@@ -194,9 +254,21 @@ class ClassFellowApp(ctk.CTk):
         if module_key not in self.view_classes:
             return False
 
+        # Clean up any lingering error card from previous attempts
+        if self._error_card_frame:
+            self._error_card_frame.destroy()
+            self._error_card_frame = None
+
         if module_key not in self.views:
             view_cls = self.view_classes[module_key]
-            self.views[module_key] = view_cls(self.workspace_frame, self)
+            try:
+                self.views[module_key] = view_cls(self.workspace_frame, self)
+            except Exception as exc:
+                logging.getLogger(__name__).error(
+                    f"Failed to instantiate view '{module_key}': {exc}", exc_info=True
+                )
+                self._render_view_error_card(module_key, str(exc))
+                return False
 
         target_view = self.views[module_key]
 
@@ -205,12 +277,86 @@ class ClassFellowApp(ctk.CTk):
 
         target_view.pack(fill="both", expand=True)
         self.current_view = target_view
-        target_view.on_show(**kwargs)
+        try:
+            target_view.on_show(**kwargs)
+        except Exception as exc:
+            logging.getLogger(__name__).warning(f"Error in {module_key}.on_show: {exc}")
+
+        # Update sidebar button active indicators
+        for k, btn in self.sidebar_buttons.items():
+            btn.set_active(k == module_key)
 
         self.status_label.configure(
             text=f"Active Workspace: {module_key.capitalize()} • SQLite WAL Mode Active"
         )
         return True
+
+    def _render_view_error_card(self, module_key: str, error_msg: str) -> None:
+        """Renders an in-workspace recovery card when a view fails initialization."""
+        if self.current_view:
+            self.current_view.pack_forget()
+            self.current_view = None
+
+        if self._error_card_frame:
+            self._error_card_frame.destroy()
+
+        self._error_card_frame = ctk.CTkFrame(self.workspace_frame, fg_color="#1E293B", corner_radius=8)
+        self._error_card_frame.pack(fill="both", expand=True, padx=20, pady=20)
+
+        ctk.CTkLabel(
+            self._error_card_frame,
+            text=f"⚠️ Workspace Initialization Notice: {module_key.capitalize()}",
+            font=ctk.CTkFont(size=17, weight="bold"),
+            text_color="#F87171"
+        ).pack(pady=(30, 8))
+
+        ctk.CTkLabel(
+            self._error_card_frame,
+            text="The workspace could not be loaded because the underlying database or component encountered an issue:",
+            font=ctk.CTkFont(size=12),
+            text_color="#94A3B8"
+        ).pack(pady=(0, 10))
+
+        err_box = ctk.CTkTextbox(self._error_card_frame, height=90, width=540, fg_color="#0F172A", text_color="#FCA5A5")
+        err_box.insert("0.0", error_msg)
+        err_box.configure(state="disabled")
+        err_box.pack(pady=10)
+
+        btn_row = ctk.CTkFrame(self._error_card_frame, fg_color="transparent")
+        btn_row.pack(pady=16)
+
+        ctk.CTkButton(
+            btn_row,
+            text="🛠️ Run Database Auto-Repair",
+            fg_color="#10B981",
+            hover_color="#059669",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=lambda: self._repair_database_and_reload(module_key)
+        ).pack(side="left", padx=10)
+
+        ctk.CTkButton(
+            btn_row,
+            text="🔄 Retry Workspace",
+            fg_color="#3B82F6",
+            hover_color="#2563EB",
+            font=ctk.CTkFont(size=12),
+            command=lambda: self._retry_workspace(module_key)
+        ).pack(side="left", padx=10)
+
+    def _repair_database_and_reload(self, module_key: str) -> None:
+        """Invokes init_database to apply missing migrations and reloads the view."""
+        try:
+            self.db_conn = init_database(self.db_path) if self.db_path else init_database()
+            self.views.pop(module_key, None)
+            self.navigate_to(module_key)
+        except Exception as exc:
+            logging.getLogger(__name__).error(f"Auto-repair failed: {exc}", exc_info=True)
+            self._render_view_error_card(module_key, f"Auto-repair failed: {exc}")
+
+    def _retry_workspace(self, module_key: str) -> None:
+        """Retries loading workspace after removing cached instance."""
+        self.views.pop(module_key, None)
+        self.navigate_to(module_key)
 
     def _on_navigate(self, module_key: str) -> None:
         """Handles navigation sidebar button clicks."""
