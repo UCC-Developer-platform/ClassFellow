@@ -39,9 +39,10 @@ def _init_pdf_fonts() -> tuple[str, str]:
     """
     global _FONT_NORMAL, _FONT_BOLD
 
-    # Candidates in order of preference
+    base_dir = getattr(sys, "_MEIPASS", os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     search_paths = [
-        os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "assets", "fonts", "urdu.ttf"),
+        os.path.join(base_dir, "assets", "fonts", "urdu.ttf"),
+        os.path.join(os.path.dirname(sys.executable), "assets", "fonts", "urdu.ttf"),
         "C:/Windows/Fonts/arial.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/freefont/FreeSans.ttf",
