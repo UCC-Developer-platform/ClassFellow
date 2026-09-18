@@ -9,10 +9,9 @@ Settings, and Dashboard workspaces without crashing or freezing.
 """
 
 import os
-import sqlite3
 import pytest
 
-from database import init_database, get_schema_version, get_connection
+from database import init_database, get_schema_version
 from app.app import ClassFellowApp, SidebarNavButton
 from ui import has_active_display
 
@@ -63,13 +62,25 @@ def test_init_database_on_empty_file(tmp_path):
 
 
 def test_app_cold_start_and_workspace_navigation(tmp_path):
-    """Verifies that ClassFellowApp initializes cleanly and navigates to all workspaces on cold DB."""
+    """
+    Verifies that ClassFellowApp initializes cleanly on cold DB, navigates to all workspaces,
+    enforces RTL justification on Urdu fields, allows inline class creation via QuickAddClassModal,
+    and reports live operational diagnostics in settings.
+    """
     if not has_active_display():
         pytest.skip("Active GUI display not available in this environment.")
 
+    from ui.student_view import StudentAdmissionModal, QuickAddClassModal
+
     cold_db = str(tmp_path / "app_cold_start.db")
 
-    app = ClassFellowApp(db_path=cold_db)
+    try:
+        app = ClassFellowApp(db_path=cold_db)
+    except Exception as exc:
+        if "tk.tcl" in str(exc) or "TclError" in type(exc).__name__:
+            pytest.skip(f"Tkinter GUI runtime unavailable on this runner: {exc}")
+        raise
+
     try:
         # Schema must be auto-bootstrapped to version 3
         assert get_schema_version(app.db_conn) == 3
@@ -87,37 +98,7 @@ def test_app_cold_start_and_workspace_navigation(tmp_path):
             assert nav_success is True, f"Navigation to '{mod}' failed on cold start!"
             assert app.current_view is not None
 
-        # Verify that Settings workspace probes report operational status
-        settings_view = app.views.get("settings")
-        assert settings_view is not None
-        assert "Active & Verified" in settings_view.db_conn_status_label.cget("text")
-        assert "Operational" in settings_view.probe_students_label.cget("text")
-        assert "Operational" in settings_view.probe_fees_label.cget("text")
-        assert "Operational" in settings_view.probe_attendance_label.cget("text")
-        assert "Operational" in settings_view.probe_exams_label.cget("text")
-
-        # Test the 1-click auto-repair utility in settings
-        settings_view._run_db_repair()
-        assert "verified & auto-repaired" in settings_view.repair_status_label.cget("text")
-
-    finally:
-        app.destroy()
-
-
-def test_admission_modal_rtl_and_quick_add_class(tmp_path):
-    """
-    Verifies that StudentAdmissionModal enforces RTL justification on Urdu inputs,
-    allows inline class group creation via QuickAddClassModal, and successfully
-    admits a student without validation errors.
-    """
-    if not has_active_display():
-        pytest.skip("Active GUI display not available in this environment.")
-
-    from ui.student_view import StudentAdmissionModal, QuickAddClassModal
-
-    cold_db = str(tmp_path / "admission_test.db")
-    app = ClassFellowApp(db_path=cold_db)
-    try:
+        # Verify Student Admission Modal and QuickAddClassModal on students workspace
         app.navigate_to("students")
         student_view = app.views.get("students")
         assert student_view is not None
@@ -162,7 +143,10 @@ def test_admission_modal_rtl_and_quick_add_class(tmp_path):
 
             # Verify student is admitted in SQLite
             cur = app.db_conn.cursor()
-            cur.execute("SELECT id, admission_number, first_name, urdu_name, guardian_urdu_name FROM students WHERE guardian_phone = '03213000625';")
+            cur.execute(
+                "SELECT id, admission_number, first_name, urdu_name, guardian_urdu_name "
+                "FROM students WHERE guardian_phone = '03213000625';"
+            )
             row = cur.fetchone()
             assert row is not None
             assert row[2] == "Abdullah Mohsen"
@@ -177,5 +161,19 @@ def test_admission_modal_rtl_and_quick_add_class(tmp_path):
 
         finally:
             modal.destroy()
+
+        # Verify that Settings workspace probes report operational status
+        settings_view = app.views.get("settings")
+        assert settings_view is not None
+        assert "Active & Verified" in settings_view.db_conn_status_label.cget("text")
+        assert "Operational" in settings_view.probe_students_label.cget("text")
+        assert "Operational" in settings_view.probe_fees_label.cget("text")
+        assert "Operational" in settings_view.probe_attendance_label.cget("text")
+        assert "Operational" in settings_view.probe_exams_label.cget("text")
+
+        # Test the 1-click auto-repair utility in settings
+        settings_view._run_db_repair()
+        assert "verified & auto-repaired" in settings_view.repair_status_label.cget("text")
+
     finally:
         app.destroy()
