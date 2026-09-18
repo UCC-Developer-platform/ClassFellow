@@ -2,8 +2,9 @@
 
 **Document Reference**: `docs/roadmaps/PHASE_09_VALIDATION_REFINEMENT_AND_MAINTENANCE_ROADMAP.md`  
 **Target Release**: ClassFellow Enterprise & Desktop Suite v1.1.0  
-**Status**: **GATE 1 APPROVED & STEP 1 EXECUTED (PORTABLE USB READY)**  
-**Engineering Boundary**: **Documentation Phase Only — Zero Application Code Modification Authorized**  
+**Status**: **GATE 1 APPROVED | TRACK 01 / GATE 2 IN PROGRESS (PHYSICAL USB AUDIT UNDERWAY)**  
+**Defect Register**: [`docs/troubleshooting/BUGS_AND_RESOLUTION_REGISTER.md`](file:///c:/04_Classfellow/docs/troubleshooting/BUGS_AND_RESOLUTION_REGISTER.md)  
+**Engineering Boundary**: **Documentation & Audit Phase Only — Zero Application Code Modification Authorized**  
 **Target Environments**: Windows 11 (64-bit Desktop), Inno Setup USB Deployment, Cloud Staging  
 
 ---
@@ -38,7 +39,7 @@ Therefore, this roadmap institutes an **audit-first, phase-gated governance work
 
 ---
 
-## Track 1: Step-by-Step Desktop Audit & USB Deployment Plan (Track A)
+## Track 1: Step-by-Step Desktop Audit & USB Deployment Plan (Track A) — [IN PROGRESS]
 
 ### 1.1 Standalone Windows Binary Build Sequence
 
@@ -119,6 +120,9 @@ Get-FileHash -Algorithm SHA256 "dist\ClassFellow_v1.0.0_Setup.exe" | Out-File -F
 ---
 
 ### 1.4 Structured Tester Audit Checklist
+
+> [!NOTE]
+> **Active Defect Tracking**: Per architectural governance, all bugs, runtime crashes, and visual discrepancies discovered during physical USB execution on Windows 11 are cataloged in the dedicated bug register: [`docs/troubleshooting/BUGS_AND_RESOLUTION_REGISTER.md`](file:///c:/04_Classfellow/docs/troubleshooting/BUGS_AND_RESOLUTION_REGISTER.md). This roadmap document retains the overarching audit checkpoints and release gates.
 
 The Product Owner must physically evaluate the following 7 critical operational areas:
 
@@ -590,13 +594,14 @@ Implementation of future coding tasks will proceed strictly through the followin
 │                              PHASE 9 REVIEW GATE CADENCE                               │
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                        │
-│   Gate 1: Master Roadmap Sign-Off (Current Milestone)                                  │
+│   Gate 1: Master Roadmap Sign-Off (COMPLETED)                                          │
 │   • Deliverable: docs/roadmaps/PHASE_09_VALIDATION_REFINEMENT_AND_MAINTENANCE_ROADMAP.md│
-│   • Approval Required: Product Owner written sign-off in chat.                        │
+│   • Approval Required: Product Owner written sign-off in chat (Granted).              │
 │                                                                                        │
-│   Gate 2: Physical Desktop & USB Verification                                          │
-│   • Deliverable: Completed Track 1 Audit Checklist from Windows 11 machine.            │
-│   • Approval Required: Product Owner confirmation of high-DPI & printer checks.        │
+│   Gate 2: Physical Desktop & USB Verification [IN PROGRESS]                            │
+│   • Deliverable: docs/troubleshooting/BUGS_AND_RESOLUTION_REGISTER.md                  │
+│   • Current State: Initial USB tests conducted; BUG-001, BUG-002, BUG-003 cataloged.    │
+│   • Approval Required: Architectural review by Chief Architect & GEM AI on resolutions.│
 │                                                                                        │
 │   Gate 3: NotebookLM Competitive Alignment                                             │
 │   • Deliverable: Completed KUDE Strategy & Gap Analysis Document.                      │
@@ -623,5 +628,5 @@ Implementation of future coding tasks will proceed strictly through the followin
 
 | Role | Name | Signature / Status | Date |
 | :--- | :--- | :---: | :---: |
-| **Product Owner / Lead Reviewer** | UCC Founder | `APPROVED (Gate 1 & Step 1 Build Authorized)` | 2026-09-18 |
-| **Lead Systems Architect (Repo AI)**| Antigravity AI | `STEP 1 PORTABLE COMPILED & VERIFIED` | 2026-09-18 |
+| **Product Owner / Lead Reviewer** | UCC Founder | `APPROVED (Gate 1 Signed; Track 1 Audit In Progress)` | 2026-09-18 |
+| **Lead Systems Architect (Repo AI)**| Antigravity AI | `TRACK 1 DEFECTS LOGGED TO TROUBLESHOOTING REGISTER` | 2026-09-18 |
