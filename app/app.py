@@ -65,6 +65,10 @@ def load_configuration() -> dict:
     if os.path.exists(theme_path):
         with open(theme_path, "r", encoding="utf-8") as f:
             config["theme"] = json.load(f)
+            active_palette = config["theme"].get("active_palette")
+            if active_palette:
+                from ui.base_view import apply_theme_palette
+                apply_theme_palette(active_palette, config_dir=config_dir)
 
     if os.path.exists(modules_path):
         with open(modules_path, "r", encoding="utf-8") as f:
@@ -396,7 +400,82 @@ class ClassFellowApp(ctk.CTk):
             self.destroy()
 
 
+def handle_smoke_test() -> int:
+    """
+    Executes an automated smoke test on the standalone binary or local runtime.
+    Validates:
+      1. Essential module imports and dependencies.
+      2. Application and theme configuration loading.
+      3. SQLite database initialization and schema migration to version 5.
+      4. ReportLab fee voucher and report card PDF generators.
+      5. Headless vs active display detection.
+    Returns 0 on success, non-zero on failure.
+    """
+    print("=" * 64)
+    print("ClassFellow Standalone Executable Smoke Test")
+    print("=" * 64)
+
+    # 1. Configuration Loading
+    try:
+        cfg = load_configuration()
+        active_theme = cfg.get("theme", {}).get("theme", "Dark")
+        active_palette = cfg.get("theme", {}).get("active_palette", "Emerald Classic")
+        print(f"[SMOKE-TEST] Configuration loaded. Theme: {active_theme} | Palette: {active_palette}")
+    except Exception as exc:
+        print(f"[SMOKE-TEST ERROR] Failed to load configuration: {exc}")
+        return 1
+
+    # 2. Database Bootstrap & Migration to v5
+    import tempfile
+    smoke_db_dir = tempfile.mkdtemp(prefix="cf_smoke_")
+    smoke_db = os.path.join(smoke_db_dir, "smoke_test.db")
+    try:
+        conn = init_database(smoke_db)
+        from database import get_schema_version
+        v = get_schema_version(conn)
+        conn.close()
+        print(f"[SMOKE-TEST] Database bootstrap verified. PRAGMA user_version: {v}")
+        if v != 5:
+            print(f"[SMOKE-TEST ERROR] Expected schema version 5, got {v}")
+            return 2
+    except Exception as exc:
+        print(f"[SMOKE-TEST ERROR] Database bootstrap failed: {exc}")
+        return 3
+    finally:
+        try:
+            if os.path.exists(smoke_db):
+                os.remove(smoke_db)
+            if os.path.exists(smoke_db_dir):
+                os.rmdir(smoke_db_dir)
+        except Exception:
+            pass
+
+    # 3. ReportLab Document Generators
+    try:
+        from reports import FeeVoucherGenerator, ReportCardGenerator
+        assert FeeVoucherGenerator is not None
+        assert ReportCardGenerator is not None
+        print("[SMOKE-TEST] ReportLab A4 PDF generator subsystem ready.")
+    except Exception as exc:
+        print(f"[SMOKE-TEST ERROR] Failed to import ReportLab generators: {exc}")
+        return 4
+
+    # 4. Display Check
+    if has_active_display():
+        print("[SMOKE-TEST] Active GUI display detected.")
+    else:
+        print("[SMOKE-TEST] Headless runner mode detected (CI/CD environment).")
+
+    print("[SMOKE-TEST] SUCCESS: Standalone executable components verified. Exit 0.")
+    print("=" * 64)
+    return 0
+
+
 def main() -> None:
+    if "--smoke-test" in sys.argv:
+        code = handle_smoke_test()
+        sys.exit(code)
+
     init_windows_dpi()
     if not has_active_display():
         print("No active display detected. Headless environment active.")

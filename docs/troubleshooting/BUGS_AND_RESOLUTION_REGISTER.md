@@ -1,9 +1,9 @@
 # ClassFellow - Bug Register & Troubleshooting Resolution Matrix
 
 **Document Reference**: `docs/troubleshooting/BUGS_AND_RESOLUTION_REGISTER.md`  
-**Tracking Cycle**: Phase 9 Gate 3 Finalization & Multi-Platform Testing Modernization  
-**Current Status**: **ALL DEFECTS RESOLVED (REF-001 & REF-002 VERIFIED) | ARCHITECTURAL SHIFT: PARALLEL MULTI-PLATFORM TESTING MANDATED**  
-**Associated Baseline**: Release `v1.1.0-enterprise` / Portable USB Build (Commit `e20cddd`)  
+**Tracking Cycle**: Phase 9 Track 4 Scope Restriction (Desktop Focus First) & Visual Identity Engine  
+**Current Status**: **ALL DEFECTS RESOLVED (REF-001, REF-002 & TRACK-4 VERIFIED) | 195/195 TESTS PASSING (100% GREEN)**  
+**Associated Baseline**: Release `v1.1.0-enterprise` / Portable USB Build (`ClassFellow.exe`)  
 **Target Environments**: Windows 11 Desktop, Django Web Portal, Flutter Mobile, Distributed Cloud Sync  
 
 ---
@@ -12,7 +12,7 @@
 
 During initial hands-on physical testing of the portable USB executable on Windows 11 by the Chief Architect, critical functional and visual discrepancies were identified. 
 
-While all 177 automated unit tests passed in the CI test runner, physical execution on a fresh machine exposed fundamental gaps between automated test mocks and cold-start production realities.
+While all 177 automated unit tests passed in the CI test runner, physical execution on a fresh machine exposed fundamental gaps between automated test mocks and cold-start production realities. 
 
 This document serves as the permanent, authoritative **Bug Register & Troubleshooting Matrix** for ClassFellow. Every defect discovered must be cataloged here with:
 1. **The Exact Error Reported**: Physical observations and operational failure modes.
@@ -27,10 +27,10 @@ This document serves as the permanent, authoritative **Bug Register & Troublesho
 │                                                                                        │
 │   ┌────────────────────────────────────────────────────────────────────────────────┐   │
 │   │                 FAST-TRACK AUTOMATED TEST INFRASTRUCTURE (CI/CD)               │   │
-│   │  • Desktop Unit & Logic (pytest 187/187 green)                                 │   │
-│   │  • Desktop GUI Smoke & Windows Binary Execution (pywinauto / process probe)   │   │
-│   │  • Web Application (Django tests + PostgreSQL + Playwright E2E)                │   │
-│   │  • Mobile App (Flutter / Dart test suite in CI)                                │   │
+│   │  • Desktop Unit & Logic (pytest 195/195 green)                                 │   │
+│   │  • Desktop GUI Smoke & Windows Binary Execution (ClassFellow.exe --smoke-test) │   │
+│   │  • Web Application (Django tests + PostgreSQL + Playwright E2E) [Deferred]     │   │
+│   │  • Mobile App (Flutter / Dart test suite in CI) [Deferred]                     │   │
 │   │  • Distributed Cloud Sync (Multi-campus sync & reconciliation tests)           │   │
 │   └───────────────────────────────────────┬────────────────────────────────────────┘   │
 │                                           │                                            │
@@ -61,6 +61,7 @@ This document serves as the permanent, authoritative **Bug Register & Troublesho
 | **BUG-002B**| **MEDIUM** | Shell UI / Sidebar | Compound Unicode ZWJ emoji (`👨‍🎓`) dissociates into dual glyphs (`👨` + `🎓`) on Windows DirectWrite Tkinter font fallback, expanding icon box width. | **RESOLVED** |
 | **REF-001** | **ARCHITECTURAL**| Student Registration | Structured Two-Stage Admission Form, Sibling Discount Formula, Prior Arrears, and 3-Panel Fee Voucher Subsystem Overhaul. | **RESOLVED** |
 | **REF-002** | **ARCHITECTURAL**| Settings / Admission / Ledger | First-Time Setup Guard ("Mother Form"), Regional Operating Surcharges (Generator/Paper/Guard/Refunds), Guardian Email & Persona Splitter. | **RESOLVED** |
+| **REF-003** | **ARCHITECTURAL**| Theme & Identity / Reports / CI | Phase 9 Track 4: Multi-Palette Theme Engine, ReportLab Opacity-Controlled Crest Watermark, Desktop-Confined CI & Automated Smoke Test. | **RESOLVED** |
 
 ---
 
@@ -643,7 +644,7 @@ Under formal authorization from the Chief Architect, ClassFellow is abandoning t
 | **4. Cloud Sync & Reconciliation** | Unit tests for backup retention & SHA-256 manifests | Simulated offline/online network partition & dual-campus conflict tests | Pytest network mock harness |
 | **5. CI/CD Pipeline** | Single-job Python `pytest` run in `.github/workflows/ci.yml` | Multi-job matrix pipeline (Desktop Build + Django Postgres + Flutter + Binary Smoke) | GitHub Actions CI/CD matrix |
 
-### 4. Summary of Recently Completed Baseline (Phase 9 Gate 3 Finalization)
+### 4. Summary of Completed Baseline (Phase 9 Gate 3 Finalization)
 Before initiating this testing modernization, all Phase 9 Gate 3 objectives have been completed, verified, and committed to `develop`:
 - **REF-001 (Two-Stage Punjab Admission Subsystem)**: Complete with sibling auto-discount math, prior arrears roll-forward, ReportLab 3-panel A4 fee vouchers, and keyboard shortcuts.
 - **REF-002 (Mother Form, Dynamic Surcharges & Persona Splitter)**:
@@ -656,5 +657,46 @@ Before initiating this testing modernization, all Phase 9 Gate 3 objectives have
 - **Test Suite Health**: **187/187 tests passing (100% green)**.
 - **Binary Distribution**: Recompiled `ClassFellow.exe` (SHA-256: `751D11FF4EBDB97F919BD7732304E5424A3AEA26DD46DFD8D5BE6CBF758DA3F3`) mirrored to `dist/ClassFellow_Portable_USB/ClassFellow/`.
 - **Git Baseline**: Synced on `origin/develop` at commit `e20cddd`.
+
+---
+
+## Architectural Dossier 003: Phase 9 Track 4 Scope Restriction (Desktop Focus First) & Visual Identity Engine (REF-003)
+
+### 1. Scope Restriction & Order of Operations Mandate
+- **Problem**: Multi-platform matrix CI expansion (`web-ci` and `mobile-ci`) would trigger false failures because Web (Django) and Mobile (Flutter) codebases had not yet reached schema v5 parity.
+- **Directive**: Halt expansion into web and mobile codebases. Scope remote GitHub CI strictly to `desktop-ci` with an automated binary smoke test (`ClassFellow.exe --smoke-test`). Focus all engineering effort on finalizing desktop visual identity, theme palettes, and ReportLab security watermarking.
+
+### 2. Work Package Implementations
+1. **Work Package 1: Confined Desktop-Only CI & Binary Smoke Test**:
+   - `app/app.py`: Implemented `handle_smoke_test() -> int` and intercepted `"--smoke-test"` early in `main()` before GUI loop startup. Validates theme configuration loading, verifies SQLite schema v5 migration boots on a temporary database, verifies ReportLab PDF generation engines, and exits cleanly with code 0.
+   - `.github/workflows/ci.yml`: Scoped strictly to single-job `desktop-ci` on `windows-latest` (Python 3.12, flake8, pytest, PyInstaller build, and `cmd /c "dist\ClassFellow\ClassFellow.exe --smoke-test"`).
+2. **Work Package 2: UI/UX Theme Engine & Palettes**:
+   - `config/theme.json`: Defined the 4 official institutional palettes:
+     - **Emerald Classic** (Default): `#0D5C3A` Primary, `#EAA812` Accent.
+     - **Royal Navy**: `#1A365D` Primary, `#D69E2E` Accent.
+     - **Executive Burgundy**: `#5C1D24` Primary, `#C59B27` Accent.
+     - **Charcoal Modern**: `#2D3748` Primary, `#319795` Accent.
+   - `ui/base_view.py` & `ui/__init__.py`: Implemented `apply_theme_palette(palette_name)` and `get_available_theme_palettes()`. Updates `THEME_COLORS` in memory and persists the active selection to `config/theme.json`.
+   - `ui/settings_view.py`: Added Theme Selection Card with live color swatches and instantaneous palette switching.
+3. **Work Package 3: Opacity-Controlled ReportLab Watermark Engine**:
+   - `app/reports/fee_voucher_generator.py` & `app/reports/report_card_generator.py`: Implemented `_draw_watermark(canvas, page_width, page_height, size=180)`:
+     - Rotates 45 degrees at page center.
+     - Sets fill and stroke opacity to 0.08 (`canvas.setFillAlpha(0.08)`, `canvas.setStrokeAlpha(0.08)`).
+     - Renders institutional crest logo centered behind voucher and report card content.
+     - Cleanly omitted if `logo_path` is None or the file does not exist.
+
+### 3. Verification & Validation Metrics
+- **Automated Regression Test Suite**:
+  - `tests/test_smoke_test.py`: Validates `handle_smoke_test()` and CLI argument intercept.
+  - `tests/test_theme_engine.py`: Validates palette loading, persistence, and invalid palette fallbacks.
+  - `tests/test_watermark_engine.py`: Validates fee voucher and report card watermark rendering with logo and missing-logo tolerance.
+  - **195/195 tests PASSED** (0 failures, 100% green across all 29 test suites).
+  - Code hygiene: `flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics` returned 0 errors.
+- **Standalone Binary Recompilation & Smoke Verification**:
+  - Compiled via PyInstaller: `dist/ClassFellow/ClassFellow.exe`.
+  - Executable Smoke Test: `cmd /c "dist\ClassFellow\ClassFellow.exe --smoke-test"` exited with code 0.
+  - Mirroring: Synced executable and assets to `dist/ClassFellow_Portable_USB/ClassFellow/`.
+  - Checksum: SHA-256 Digest `5BD5A20473729A38BF2F7709B86286BFB2E0E21C73FD3BAD8BF904385690D4A9` recorded in `dist/ClassFellow_Portable_USB/04_Verification_Tools/checksums.sha256`.
+
 
 

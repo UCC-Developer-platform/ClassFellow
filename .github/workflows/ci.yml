@@ -7,23 +7,18 @@ on:
     branches: [ main, develop ]
 
 jobs:
-  test:
-    name: Test & Validate (${{ matrix.os }} - Python ${{ matrix.python-version }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ windows-latest, ubuntu-latest ]
-        python-version: [ "3.11", "3.12" ]
+  desktop-ci:
+    name: Desktop Suite CI & Binary Smoke Test (Windows - Python 3.12)
+    runs-on: windows-latest
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
           cache: 'pip'
 
       - name: Install Dependencies
@@ -34,11 +29,20 @@ jobs:
 
       - name: Lint Code with Flake8
         run: |
-          # stop the build if there are Python syntax errors or undefined names
+          # Stop the build if there are Python syntax errors or undefined names
           flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics --exclude=.venv,build,dist
-          # exit-zero treats all errors as warnings
+          # Warning level checks
           flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics --exclude=.venv,build,dist
 
       - name: Execute Automated Tests via Pytest
         run: |
           pytest -v --tb=short
+
+      - name: Compile Standalone Executable via PyInstaller
+        run: |
+          pyinstaller --noconfirm --clean classfellow.spec
+
+      - name: Execute Post-Build Executable Smoke Test
+        run: |
+          cmd /c "dist\ClassFellow\ClassFellow.exe --smoke-test"
+

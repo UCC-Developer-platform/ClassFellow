@@ -46,10 +46,13 @@ class SettingsView(BaseView):
         # 3. Institutional Profile & Mother Form Card
         self._build_institutional_profile_card(self.content_scroll)
 
-        # 4. System Diagnostics & Active Database Engine Health Card
+        # 4. Institutional Visual Theme & Palettes Card
+        self._build_theme_selection_card(self.content_scroll)
+
+        # 5. System Diagnostics & Active Database Engine Health Card
         self._build_system_health_card(self.content_scroll)
 
-        # 5. 3-Tier Automated Backup Management Card
+        # 6. 3-Tier Automated Backup Management Card
         self._build_backup_card(self.content_scroll)
 
     def _build_institutional_profile_card(self, parent) -> None:
@@ -107,6 +110,128 @@ class SettingsView(BaseView):
         """Opens SchoolProfileModal and refreshes settings view on save."""
         from ui.school_profile_modal import SchoolProfileModal
         SchoolProfileModal(self, db_conn=self.db_conn, on_configured=self.refresh_data)
+
+    def _build_theme_selection_card(self, parent) -> None:
+        """Renders institutional theme palette selection and preview card."""
+        from ui.base_view import get_available_theme_palettes
+
+        card = ctk.CTkFrame(parent, fg_color=self.colors["bg_card"], corner_radius=8)
+        card.pack(fill="x", pady=(0, 16))
+
+        top_bar = ctk.CTkFrame(card, fg_color="transparent")
+        top_bar.pack(fill="x", padx=16, pady=(12, 6))
+
+        ctk.CTkLabel(
+            top_bar,
+            text="🎨 Institutional Visual Theme & Color Identity",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=self.colors["text_primary"]
+        ).pack(side="left")
+
+        # Status toast label
+        self.theme_status_lbl = ctk.CTkLabel(
+            top_bar,
+            text="",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=self.colors["status_paid"]
+        )
+        self.theme_status_lbl.pack(side="right", padx=(0, 8))
+
+        ctk.CTkLabel(
+            card,
+            text="Select an institutional aesthetic identity. Palettes configure high-contrast primary, accent, card, and background tokens.",
+            font=ctk.CTkFont(size=11),
+            text_color=self.colors["text_secondary"]
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        # Control & Preview Bar
+        control_frame = ctk.CTkFrame(card, fg_color=self.colors["bg_app"], corner_radius=6)
+        control_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        palettes = get_available_theme_palettes()
+        palette_names = list(palettes.keys())
+
+        # Determine current active palette from config
+        cur_palette = "Emerald Classic"
+        app_cfg = getattr(self.app, "config", {})
+        if app_cfg and "theme" in app_cfg:
+            cur_palette = app_cfg["theme"].get("active_palette", "Emerald Classic")
+        if cur_palette not in palette_names and palette_names:
+            cur_palette = palette_names[0]
+
+        ctk.CTkLabel(
+            control_frame,
+            text="Select Palette:",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=self.colors["text_primary"]
+        ).pack(side="left", padx=(12, 8), pady=10)
+
+        self.theme_option_var = ctk.StringVar(value=cur_palette)
+        self.theme_option_menu = ctk.CTkOptionMenu(
+            control_frame,
+            values=palette_names,
+            variable=self.theme_option_var,
+            width=190,
+            command=self._on_theme_preview
+        )
+        self.theme_option_menu.pack(side="left", padx=8, pady=10)
+
+        # Color Swatches Preview
+        self.swatch_frame = ctk.CTkFrame(control_frame, fg_color="transparent")
+        self.swatch_frame.pack(side="left", padx=12, pady=10)
+
+        # Apply Button
+        btn_apply = ctk.CTkButton(
+            control_frame,
+            text="💾 Apply Palette",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=self.colors["brand_primary"],
+            hover_color=self.colors["brand_accent"],
+            width=120,
+            command=self._apply_selected_theme
+        )
+        btn_apply.pack(side="right", padx=12, pady=10)
+
+        self._render_theme_swatches(cur_palette)
+
+    def _render_theme_swatches(self, palette_name: str) -> None:
+        """Renders color swatch preview boxes for a given palette."""
+        from ui.base_view import get_available_theme_palettes
+        palettes = get_available_theme_palettes()
+        pal = palettes.get(palette_name, palettes.get("Emerald Classic", {}))
+
+        for w in self.swatch_frame.winfo_children():
+            w.destroy()
+
+        swatches = [
+            ("Primary", pal.get("brand_primary", "#10B981")),
+            ("Accent", pal.get("brand_accent", "#3B82F6")),
+            ("Background", pal.get("bg_app", "#0F172A")),
+            ("Card", pal.get("bg_card", "#1E293B")),
+        ]
+        for name, hex_code in swatches:
+            sf = ctk.CTkFrame(self.swatch_frame, fg_color="transparent")
+            sf.pack(side="left", padx=5)
+            box = ctk.CTkFrame(sf, fg_color=hex_code, width=20, height=20, corner_radius=3)
+            box.pack(side="top")
+            lbl = ctk.CTkLabel(sf, text=name, font=ctk.CTkFont(size=8), text_color=self.colors["text_secondary"])
+            lbl.pack(side="bottom")
+
+    def _on_theme_preview(self, selected_palette: str) -> None:
+        """Updates swatch display on palette change."""
+        self._render_theme_swatches(selected_palette)
+
+    def _apply_selected_theme(self) -> None:
+        """Applies chosen palette, updates THEME_COLORS, and provides user feedback."""
+        from ui.base_view import apply_theme_palette
+        chosen = self.theme_option_var.get()
+        new_colors = apply_theme_palette(chosen)
+        self.colors.update(new_colors)
+        if hasattr(self, "theme_status_lbl"):
+            self.theme_status_lbl.configure(
+                text=f"✓ Palette '{chosen}' Applied",
+                text_color=new_colors.get("brand_primary", "#10B981")
+            )
 
     def _build_system_health_card(self, parent) -> None:
         """Renders live system diagnostics, database engine status, and 1-click auto-repair."""

@@ -24,22 +24,120 @@ def has_active_display() -> bool:
     return bool(os.environ.get("DISPLAY"))
 
 
-# Standardized Dark-Mode Theme Color Palette
-THEME_COLORS = {
-    "bg_app": "#0F172A",          # Deep slate background
-    "bg_card": "#1E293B",         # Slate card container
-    "bg_row_alt": "#141E33",      # Alternating row background
-    "bg_sidebar": "#020617",      # Jet black sidebar
-    "brand_primary": "#10B981",   # Emerald green accent
-    "brand_accent": "#3B82F6",    # Indigo blue
-    "text_primary": "#F8FAFC",    # High contrast white/slate
-    "text_secondary": "#94A3B8",  # Muted slate
-    "text_muted": "#64748B",      # Dim slate
-    "status_paid": "#10B981",     # Green badge
-    "status_partial": "#F59E0B",  # Amber badge
-    "status_unpaid": "#EF4444",   # Red badge
-    "border_color": "#334155",    # Slate border
+# Standardized Institutional Dark-Mode Theme Palettes
+THEME_PALETTES: Dict[str, Dict[str, str]] = {
+    "Emerald Classic": {
+        "name": "Emerald Classic",
+        "description": "Default educational theme featuring deep slate foundation and emerald green vitality.",
+        "bg_app": "#0F172A",
+        "bg_card": "#1E293B",
+        "bg_row_alt": "#141E33",
+        "bg_sidebar": "#020617",
+        "brand_primary": "#10B981",
+        "brand_accent": "#3B82F6",
+        "text_primary": "#F8FAFC",
+        "text_secondary": "#94A3B8",
+        "text_muted": "#64748B",
+        "status_paid": "#10B981",
+        "status_partial": "#F59E0B",
+        "status_unpaid": "#EF4444",
+        "border_color": "#334155",
+        "bg_table_header": "#0B1120",
+    },
+    "Royal Navy": {
+        "name": "Royal Navy",
+        "description": "Prestigious academic maritime navy with royal blue highlights.",
+        "bg_app": "#0B132B",
+        "bg_card": "#1C2541",
+        "bg_row_alt": "#141F3D",
+        "bg_sidebar": "#050A18",
+        "brand_primary": "#2563EB",
+        "brand_accent": "#38BDF8",
+        "text_primary": "#F8FAFC",
+        "text_secondary": "#94A3B8",
+        "text_muted": "#64748B",
+        "status_paid": "#10B981",
+        "status_partial": "#F59E0B",
+        "status_unpaid": "#EF4444",
+        "border_color": "#3A506B",
+        "bg_table_header": "#080E20",
+    },
+    "Executive Burgundy": {
+        "name": "Executive Burgundy",
+        "description": "Authoritative zinc and deep burgundy palette for prestigious institutional boards.",
+        "bg_app": "#18181B",
+        "bg_card": "#27272A",
+        "bg_row_alt": "#202024",
+        "bg_sidebar": "#09090B",
+        "brand_primary": "#991B1B",
+        "brand_accent": "#F59E0B",
+        "text_primary": "#F8FAFC",
+        "text_secondary": "#A1A1AA",
+        "text_muted": "#71717A",
+        "status_paid": "#10B981",
+        "status_partial": "#F59E0B",
+        "status_unpaid": "#EF4444",
+        "border_color": "#3F3F46",
+        "bg_table_header": "#141417",
+    },
+    "Charcoal Modern": {
+        "name": "Charcoal Modern",
+        "description": "Minimalist high-contrast charcoal black with vibrant sky blue accents.",
+        "bg_app": "#09090B",
+        "bg_card": "#18181B",
+        "bg_row_alt": "#131316",
+        "bg_sidebar": "#030712",
+        "brand_primary": "#0284C7",
+        "brand_accent": "#38BDF8",
+        "text_primary": "#F8FAFC",
+        "text_secondary": "#94A3B8",
+        "text_muted": "#64748B",
+        "status_paid": "#10B981",
+        "status_partial": "#F59E0B",
+        "status_unpaid": "#EF4444",
+        "border_color": "#27272A",
+        "bg_table_header": "#050507",
+    },
 }
+
+THEME_COLORS: Dict[str, str] = dict(THEME_PALETTES["Emerald Classic"])
+
+
+def get_available_theme_palettes() -> Dict[str, Dict[str, str]]:
+    """Returns mapping of available institutional color palettes."""
+    return THEME_PALETTES
+
+
+def apply_theme_palette(palette_name: str, config_dir: Optional[str] = None) -> Dict[str, str]:
+    """
+    Applies the specified theme palette in-memory and persists the choice to config/theme.json.
+    """
+    if palette_name not in THEME_PALETTES:
+        matched = None
+        for k in THEME_PALETTES:
+            if palette_name.lower() in k.lower():
+                matched = k
+                break
+        palette_name = matched or "Emerald Classic"
+
+    selected = THEME_PALETTES[palette_name]
+    THEME_COLORS.update(selected)
+
+    try:
+        import json
+        if not config_dir:
+            config_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "config")
+        theme_json_path = os.path.join(config_dir, "theme.json")
+        if os.path.exists(theme_json_path):
+            with open(theme_json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            data["active_palette"] = palette_name
+            with open(theme_json_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+    except Exception as exc:
+        logger.warning(f"Could not persist active theme palette to theme.json: {exc}")
+
+    return dict(THEME_COLORS)
 
 
 class BaseView(ctk.CTkFrame):

@@ -79,9 +79,15 @@ _init_pdf_fonts()
 class ReportCardGenerator:
     """Generates print-ready single-sheet A4 terminal report cards."""
 
-    def __init__(self, institution_name: str = "CLASSFELLOW HIGH SCHOOL & ACADEMY", urdu_institution_name: str = "کلاس فیلو ہائی سکول و اکیڈمی"):
+    def __init__(
+        self,
+        institution_name: str = "CLASSFELLOW HIGH SCHOOL & ACADEMY",
+        urdu_institution_name: str = "کلاس فیلو ہائی سکول و اکیڈمی",
+        logo_path: Optional[str] = None
+    ):
         self.institution_name = institution_name
         self.urdu_institution_name = urdu_institution_name
+        self.logo_path = logo_path
 
     def render_report_card(
         self,
@@ -108,6 +114,9 @@ class ReportCardGenerator:
         pdf.setStrokeColor(CARD_BORDER)
         pdf.setLineWidth(1.0)
         pdf.rect(margin - 10, margin - 10, content_width + 20, PAGE_HEIGHT - (2 * margin) + 20)
+
+        # 1.1 Draw Central Opacity-Controlled Watermark
+        self._draw_watermark(pdf, PAGE_WIDTH, PAGE_HEIGHT, size=240.0)
 
         # 2. Header Section
         y = PAGE_HEIGHT - margin - 20
@@ -432,13 +441,50 @@ class ReportCardGenerator:
         pdf.drawCentredString(right_x + (line_w / 2.0), y + 2, "Principal / Official Stamp")
 
 
+    def _draw_watermark(
+        self,
+        pdf: canvas.Canvas,
+        page_width: float,
+        page_height: float,
+        size: float = 240.0
+    ) -> None:
+        """
+        Renders an opacity-controlled institutional crest watermark centered on the document.
+        Rotates 45 degrees with 8% fill and stroke alpha.
+        Safely omitted if logo_path is unconfigured or non-existent.
+        """
+        if not self.logo_path or not os.path.exists(self.logo_path):
+            return
+
+        pdf.saveState()
+        try:
+            pdf.setFillAlpha(0.08)
+            pdf.setStrokeAlpha(0.08)
+            pdf.translate(page_width / 2.0, page_height / 2.0)
+            pdf.rotate(45)
+            pdf.drawImage(
+                self.logo_path,
+                -size / 2.0,
+                -size / 2.0,
+                width=size,
+                height=size,
+                preserveAspectRatio=True,
+                mask='auto'
+            )
+        except Exception:
+            pass
+        finally:
+            pdf.restoreState()
+
+
 def generate_report_card_pdf(
     report_data: StudentReportCardDTO,
     output: Optional[Union[str, BytesIO]] = None,
-    institution_name: str = "CLASSFELLOW HIGH SCHOOL & ACADEMY"
+    institution_name: str = "CLASSFELLOW HIGH SCHOOL & ACADEMY",
+    logo_path: Optional[str] = None
 ) -> Union[str, BytesIO]:
     """Convenience helper to generate an A4 terminal report card PDF."""
-    generator = ReportCardGenerator(institution_name=institution_name)
+    generator = ReportCardGenerator(institution_name=institution_name, logo_path=logo_path)
     if output is None:
         output = BytesIO()
     return generator.render_report_card(report_data, output)

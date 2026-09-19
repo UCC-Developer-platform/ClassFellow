@@ -106,6 +106,9 @@ class FeeVoucherGenerator:
             ("STUDENT / PARENT COPY (طالب علم کاپی)", 25.0),
         ]
 
+        # Draw opacity-controlled watermark before panels
+        self._draw_watermark(c, PAGE_WIDTH, PAGE_HEIGHT, size=240.0)
+
         for i, (copy_label, origin_y) in enumerate(panels):
             self._draw_panel(c, invoice_data, margin_x, origin_y, width, panel_height, copy_label)
 
@@ -117,6 +120,41 @@ class FeeVoucherGenerator:
         c.showPage()
         c.save()
         return output
+
+    def _draw_watermark(
+        self,
+        c: canvas.Canvas,
+        page_width: float,
+        page_height: float,
+        size: float = 240.0
+    ) -> None:
+        """
+        Renders an opacity-controlled institutional crest watermark centered on the document.
+        Rotates 45 degrees with 8% fill and stroke alpha.
+        Safely omitted if logo_path is unconfigured or non-existent.
+        """
+        if not self.logo_path or not os.path.exists(self.logo_path):
+            return
+
+        c.saveState()
+        try:
+            c.setFillAlpha(0.08)
+            c.setStrokeAlpha(0.08)
+            c.translate(page_width / 2.0, page_height / 2.0)
+            c.rotate(45)
+            c.drawImage(
+                self.logo_path,
+                -size / 2.0,
+                -size / 2.0,
+                width=size,
+                height=size,
+                preserveAspectRatio=True,
+                mask='auto'
+            )
+        except Exception:
+            pass
+        finally:
+            c.restoreState()
 
     def _draw_panel(
         self,
