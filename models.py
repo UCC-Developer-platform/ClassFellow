@@ -46,6 +46,7 @@ class StudentDTO:
     guardian_phone: str = ""
     guardian_whatsapp: Optional[str] = None
     guardian_cnic: Optional[str] = None
+    guardian_email: Optional[str] = None
     residential_address: Optional[str] = None
     emergency_contact: Optional[str] = None
     previous_school_slc: Optional[str] = None
@@ -64,14 +65,54 @@ class EnrollmentDTO:
     custom_discount_amount: Decimal = Decimal("0.00")
 
 
+# --- School & Institutional Profile DTOs ---
+@dataclass(frozen=True)
+class SchoolProfileDTO:
+    id: Optional[int] = None
+    name: str = ""
+    urdu_name: Optional[str] = None
+    campus_name: str = "Main Campus"
+    registration_code: Optional[str] = None
+    phone: str = ""
+    whatsapp: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    logo_path: Optional[str] = None
+    # Compatibility aliases
+    school_name: Optional[str] = None
+    school_urdu_name: Optional[str] = None
+    contact_number: Optional[str] = None
+    registration_number: Optional[str] = None
+    city: str = "Lahore"
+    affiliation_body: Optional[str] = None
+    principal_name: Optional[str] = None
+    website: Optional[str] = None
+    slogan: Optional[str] = None
+    currency_symbol: str = "Rs."
+    tax_number: Optional[str] = None
+
+    def get_name(self) -> str:
+        return self.name or self.school_name or ""
+
+    def get_urdu_name(self) -> Optional[str]:
+        return self.urdu_name or self.school_urdu_name
+
+    def get_phone(self) -> str:
+        return self.phone or self.contact_number or ""
+
+    def get_registration_code(self) -> Optional[str]:
+        return self.registration_code or self.registration_number
+
 
 # --- Fee & Receipt DTOs ---
 @dataclass(frozen=True)
 class FeeHeadDTO:
-    id: Optional[int]
-    name: str
-    urdu_name: Optional[str]
+    id: Optional[int] = None
+    name: str = ""
+    urdu_name: Optional[str] = None
     is_recurring: bool = True
+    default_amount: Decimal = Decimal("0.00")
+    is_active: bool = True
 
 
 @dataclass(frozen=True)

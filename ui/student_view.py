@@ -8,7 +8,7 @@ and modal dialog for new student admission mutations.
 import os
 import sqlite3
 import logging
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Dict, Any, Optional, List
 from tkinter import filedialog
 import customtkinter as ctk
@@ -20,9 +20,11 @@ from services.student_service import (
     generate_next_admission_number
 )
 from services.fee_service import FeeService, calculate_sibling_discount
+from services.school_service import is_school_profile_configured, get_active_fee_heads
 from services.importer_service import StudentImporterService
 from ui.base_view import BaseView, BaseModal, THEME_COLORS
 from ui.quick_add_class_modal import QuickAddClassModal
+from ui.school_profile_modal import SchoolProfileModal
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +257,15 @@ class StudentView(BaseView):
         self.refresh_data()
 
     def _open_admission_modal(self) -> None:
-        """Presents focus-trapped student admission dialog."""
+        """Presents focus-trapped student admission dialog with Route Guard."""
+        if self.db_conn and not is_school_profile_configured(self.db_conn):
+            self.show_warning(
+                "School Setup Required",
+                "Please configure your School Profile and Academic Session before admitting students."
+            )
+            SchoolProfileModal(self, db_conn=self.db_conn, on_configured=self._open_admission_modal)
+            return
+
         StudentAdmissionModal(self)
 
     def _open_import_modal(self) -> None:
@@ -356,58 +366,58 @@ class StudentAdmissionModal(BaseModal):
         form_scroll.pack(fill="both", expand=True, padx=8, pady=(0, 4))
 
         # =====================================================================
-        # STAGE 1: Identity & Demographics (شناخت و کوائف)
+        # STAGE 1: PERSONA SPLITTER (طالب علم و سرپرست شناختی کارڈز)
         # =====================================================================
-        stage1_card = ctk.CTkFrame(form_scroll, fg_color="#1E293B", corner_radius=8)
-        stage1_card.pack(fill="x", padx=4, pady=4)
+        # 1A. Student Identity Persona Card
+        student_persona_card = ctk.CTkFrame(
+            form_scroll, fg_color="#1E293B", corner_radius=8, border_width=1, border_color="#334155"
+        )
+        student_persona_card.pack(fill="x", padx=4, pady=4)
 
-        stage1_header = ctk.CTkFrame(stage1_card, fg_color="#0F172A", corner_radius=6, height=32)
-        stage1_header.pack(fill="x", padx=6, pady=6)
+        s_header = ctk.CTkFrame(student_persona_card, fg_color="#0F172A", corner_radius=6, height=32)
+        s_header.pack(fill="x", padx=6, pady=6)
         ctk.CTkLabel(
-            stage1_header,
-            text="📌 Stage 1: Identity & Demographics (شناخت و کوائف طالب علم)",
+            s_header,
+            text="🎓 Student Identity (طالب علم کے کوائف)",
             font=ctk.CTkFont(size=13, weight="bold"),
             text_color="#38BDF8"
         ).pack(side="left", padx=10, pady=4)
 
-        s1_body = ctk.CTkFrame(stage1_card, fg_color="transparent")
-        s1_body.pack(fill="x", padx=12, pady=(0, 10))
+        s_body = ctk.CTkFrame(student_persona_card, fg_color="transparent")
+        s_body.pack(fill="x", padx=12, pady=(0, 10))
 
         # Row 1: Admission No & Gender
-        r1 = ctk.CTkFrame(s1_body, fg_color="transparent")
-        r1.pack(fill="x", pady=3)
-
-        ctk.CTkLabel(r1, text="Admission #:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.admission_no_entry = ctk.CTkEntry(r1, width=170, font=ctk.CTkFont(size=12, weight="bold"))
+        sr1 = ctk.CTkFrame(s_body, fg_color="transparent")
+        sr1.pack(fill="x", pady=3)
+        ctk.CTkLabel(sr1, text="Admission #:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.admission_no_entry = ctk.CTkEntry(sr1, width=170, font=ctk.CTkFont(size=12, weight="bold"))
         self.admission_no_entry.pack(side="left", padx=(0, 16))
         self._populate_next_admission_no()
 
-        ctk.CTkLabel(r1, text="Gender *:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        ctk.CTkLabel(sr1, text="Gender *:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
         self.gender_var = ctk.StringVar(value="Male")
         self.gender_menu = ctk.CTkOptionMenu(
-            r1, values=["Male", "Female", "Other"], variable=self.gender_var, width=150
+            sr1, values=["Male", "Female", "Other"], variable=self.gender_var, width=150
         )
         self.gender_menu.pack(side="left")
 
-        # Row 2: First Name & Last Name
-        r2 = ctk.CTkFrame(s1_body, fg_color="transparent")
-        r2.pack(fill="x", pady=3)
-
-        ctk.CTkLabel(r2, text="First Name *:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.first_name_entry = ctk.CTkEntry(r2, placeholder_text="e.g. Muhammad", width=170)
+        # Row 2: First Name * & Last Name
+        sr2 = ctk.CTkFrame(s_body, fg_color="transparent")
+        sr2.pack(fill="x", pady=3)
+        ctk.CTkLabel(sr2, text="First Name *:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.first_name_entry = ctk.CTkEntry(sr2, placeholder_text="e.g. Muhammad", width=170)
         self.first_name_entry.pack(side="left", padx=(0, 16))
 
-        ctk.CTkLabel(r2, text="Last Name:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.last_name_entry = ctk.CTkEntry(r2, placeholder_text="e.g. Ali", width=150)
+        ctk.CTkLabel(sr2, text="Last Name:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.last_name_entry = ctk.CTkEntry(sr2, placeholder_text="e.g. Ali", width=150)
         self.last_name_entry.pack(side="left")
 
         # Row 3: Urdu Name (RTL Justified)
-        r3 = ctk.CTkFrame(s1_body, fg_color="transparent")
-        r3.pack(fill="x", pady=3)
-
-        ctk.CTkLabel(r3, text="Urdu Name:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        sr3 = ctk.CTkFrame(s_body, fg_color="transparent")
+        sr3.pack(fill="x", pady=3)
+        ctk.CTkLabel(sr3, text="Urdu Name:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
         self.urdu_name_entry = ctk.CTkEntry(
-            r3,
+            sr3,
             placeholder_text="مثال: محمد علی",
             width=420,
             justify="right",
@@ -416,28 +426,51 @@ class StudentAdmissionModal(BaseModal):
         self.urdu_name_entry.pack(side="left")
 
         # Row 4: Date of Birth & B-Form
-        r4 = ctk.CTkFrame(s1_body, fg_color="transparent")
-        r4.pack(fill="x", pady=3)
-
-        ctk.CTkLabel(r4, text="Date of Birth:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.dob_entry = ctk.CTkEntry(r4, placeholder_text="YYYY-MM-DD", width=170)
+        sr4 = ctk.CTkFrame(s_body, fg_color="transparent")
+        sr4.pack(fill="x", pady=3)
+        ctk.CTkLabel(sr4, text="Date of Birth:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.dob_entry = ctk.CTkEntry(sr4, placeholder_text="YYYY-MM-DD", width=170)
         self.dob_entry.pack(side="left", padx=(0, 16))
 
-        ctk.CTkLabel(r4, text="B-Form #:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.b_form_entry = ctk.CTkEntry(r4, placeholder_text="e.g. 35201-1234567-1", width=150)
+        ctk.CTkLabel(sr4, text="B-Form #:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.b_form_entry = ctk.CTkEntry(sr4, placeholder_text="e.g. 35201-1234567-1", width=150)
         self.b_form_entry.pack(side="left")
 
-        # Row 5: Guardian Name & Guardian Urdu (RTL Justified)
-        r5 = ctk.CTkFrame(s1_body, fg_color="transparent")
-        r5.pack(fill="x", pady=3)
+        # Row 5: Previous School SLC
+        sr5 = ctk.CTkFrame(s_body, fg_color="transparent")
+        sr5.pack(fill="x", pady=3)
+        ctk.CTkLabel(sr5, text="Previous SLC:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.previous_slc_entry = ctk.CTkEntry(sr5, placeholder_text="Previous School Leaving Certificate # & School Name", width=420)
+        self.previous_slc_entry.pack(side="left")
 
-        ctk.CTkLabel(r5, text="Guardian Name *:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.guardian_name_entry = ctk.CTkEntry(r5, placeholder_text="Father / Guardian name", width=170)
+        # 1B. Guardian Identity Persona Card (Distinct Border & Header)
+        guardian_persona_card = ctk.CTkFrame(
+            form_scroll, fg_color="#1E293B", corner_radius=8, border_width=1, border_color="#2563EB"
+        )
+        guardian_persona_card.pack(fill="x", padx=4, pady=(6, 4))
+
+        g_header = ctk.CTkFrame(guardian_persona_card, fg_color="#0F172A", corner_radius=6, height=32)
+        g_header.pack(fill="x", padx=6, pady=6)
+        ctk.CTkLabel(
+            g_header,
+            text="👨‍👧 Guardian Identity (والد / سرپرست کے کوائف)",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#60A5FA"
+        ).pack(side="left", padx=10, pady=4)
+
+        g_body = ctk.CTkFrame(guardian_persona_card, fg_color="transparent")
+        g_body.pack(fill="x", padx=12, pady=(0, 10))
+
+        # Row 1: Guardian Name * & Guardian Urdu (RTL Justified)
+        gr1 = ctk.CTkFrame(g_body, fg_color="transparent")
+        gr1.pack(fill="x", pady=3)
+        ctk.CTkLabel(gr1, text="Guardian Name *:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.guardian_name_entry = ctk.CTkEntry(gr1, placeholder_text="Father / Guardian name", width=170)
         self.guardian_name_entry.pack(side="left", padx=(0, 16))
 
-        ctk.CTkLabel(r5, text="Urdu Name:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        ctk.CTkLabel(gr1, text="Urdu Name:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
         self.guardian_urdu_entry = ctk.CTkEntry(
-            r5,
+            gr1,
             placeholder_text="والد / سرپرست کا نام",
             width=150,
             justify="right",
@@ -445,50 +478,44 @@ class StudentAdmissionModal(BaseModal):
         )
         self.guardian_urdu_entry.pack(side="left")
 
-        # Row 6: Relation & Guardian CNIC
-        r6 = ctk.CTkFrame(s1_body, fg_color="transparent")
-        r6.pack(fill="x", pady=3)
-
-        ctk.CTkLabel(r6, text="Relation:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        # Row 2: Relation & Guardian CNIC
+        gr2 = ctk.CTkFrame(g_body, fg_color="transparent")
+        gr2.pack(fill="x", pady=3)
+        ctk.CTkLabel(gr2, text="Relation:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
         self.relation_var = ctk.StringVar(value="Father")
         self.relation_menu = ctk.CTkOptionMenu(
-            r6, values=["Father", "Mother", "Uncle", "Grandfather", "Guardian"], variable=self.relation_var, width=170
+            gr2, values=["Father", "Mother", "Uncle", "Grandfather", "Guardian"], variable=self.relation_var, width=170
         )
         self.relation_menu.pack(side="left", padx=(0, 16))
 
-        ctk.CTkLabel(r6, text="CNIC #:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.guardian_cnic_entry = ctk.CTkEntry(r6, placeholder_text="e.g. 35201-7654321-1", width=150)
+        ctk.CTkLabel(gr2, text="CNIC #:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.guardian_cnic_entry = ctk.CTkEntry(gr2, placeholder_text="e.g. 35201-7654321-1", width=150)
         self.guardian_cnic_entry.pack(side="left")
 
-        # Row 7: Phone (with FocusOut Normalization) & WhatsApp
-        r7 = ctk.CTkFrame(s1_body, fg_color="transparent")
-        r7.pack(fill="x", pady=3)
-
-        ctk.CTkLabel(r7, text="Mobile Phone *:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.guardian_phone = ctk.CTkEntry(r7, placeholder_text="03001234567 (11 digits)", width=170)
+        # Row 3: Mobile Phone * (with FocusOut Normalization) & WhatsApp
+        gr3 = ctk.CTkFrame(g_body, fg_color="transparent")
+        gr3.pack(fill="x", pady=3)
+        ctk.CTkLabel(gr3, text="Mobile Phone *:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.guardian_phone = ctk.CTkEntry(gr3, placeholder_text="03001234567 (11 digits)", width=170)
         self.guardian_phone.pack(side="left", padx=(0, 16))
         self.guardian_phone.bind("<FocusOut>", self._on_phone_focus_out)
 
-        ctk.CTkLabel(r7, text="WhatsApp:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.guardian_whatsapp = ctk.CTkEntry(r7, placeholder_text="03001234567", width=150)
+        ctk.CTkLabel(gr3, text="WhatsApp:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.guardian_whatsapp = ctk.CTkEntry(gr3, placeholder_text="03001234567", width=150)
         self.guardian_whatsapp.pack(side="left")
         self.guardian_whatsapp.bind("<FocusOut>", self._on_whatsapp_focus_out)
 
-        # Row 8: Residential Address
-        r8 = ctk.CTkFrame(s1_body, fg_color="transparent")
-        r8.pack(fill="x", pady=3)
+        # Row 4: Guardian Email & Residential Address
+        gr4 = ctk.CTkFrame(g_body, fg_color="transparent")
+        gr4.pack(fill="x", pady=3)
+        ctk.CTkLabel(gr4, text="Guardian Email:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.guardian_email_entry = ctk.CTkEntry(gr4, placeholder_text="guardian@example.com", width=170)
+        self.guardian_email_entry.pack(side="left", padx=(0, 16))
+        self.guardian_email = self.guardian_email_entry
 
-        ctk.CTkLabel(r8, text="Address:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.address_entry = ctk.CTkEntry(r8, placeholder_text="Residential Street / Mohallah / City", width=420)
+        ctk.CTkLabel(gr4, text="Address:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.address_entry = ctk.CTkEntry(gr4, placeholder_text="Residential Street / Mohallah / City", width=150)
         self.address_entry.pack(side="left")
-
-        # Row 9: Previous School SLC
-        r9 = ctk.CTkFrame(s1_body, fg_color="transparent")
-        r9.pack(fill="x", pady=3)
-
-        ctk.CTkLabel(r9, text="Previous SLC:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.previous_slc_entry = ctk.CTkEntry(r9, placeholder_text="Previous School Leaving Certificate # & School Name", width=420)
-        self.previous_slc_entry.pack(side="left")
 
         # =====================================================================
         # STAGE 2: Academic & Fee Enrollment (تعلیمی و فیس اندراج)
@@ -538,7 +565,7 @@ class StudentAdmissionModal(BaseModal):
         )
         self.base_tuition_label.pack(side="left")
 
-        # Row 2: One-Time Upfront Charges
+        # Row 2: One-Time Upfront Charges (Standard Catalog)
         cr2 = ctk.CTkFrame(s2_body, fg_color="transparent")
         cr2.pack(fill="x", pady=3)
 
@@ -600,7 +627,64 @@ class StudentAdmissionModal(BaseModal):
         )
         self.concession_info_label.pack(fill="x", padx=(110, 0), pady=(0, 4))
 
-        # Row 4: Live Dynamic Summary Card
+        # Row 4: Dynamic Regional Operational Surcharges (fee_heads)
+        self.dynamic_surcharges: list[tuple[dict, ctk.CTkEntry]] = []
+        active_heads = []
+        if self.parent_view.db_conn:
+            try:
+                active_heads = get_active_fee_heads(self.parent_view.db_conn)
+            except Exception:
+                active_heads = []
+
+        std_names = {"Tuition Fee", "Admission Fee", "Registration / Prospectus", "Security Deposit"}
+        other_heads = [h for h in active_heads if h.get("name") not in std_names]
+
+        if other_heads:
+            sur_frame = ctk.CTkFrame(s2_body, fg_color="#0F172A", corner_radius=6)
+            sur_frame.pack(fill="x", pady=4, padx=2)
+
+            sur_hdr = ctk.CTkFrame(sur_frame, fg_color="transparent")
+            sur_hdr.pack(fill="x", padx=8, pady=(4, 2))
+            ctk.CTkLabel(
+                sur_hdr,
+                text="🏛️ Regional Operational Surcharges & Funds (fee_heads):",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color="#38BDF8"
+            ).pack(side="left")
+
+            for h in other_heads:
+                h_row = ctk.CTkFrame(sur_frame, fg_color="transparent")
+                h_row.pack(fill="x", padx=8, pady=2)
+
+                h_type = "Monthly" if h.get("is_recurring") else "One-Time"
+                type_color = "#3B82F6" if h.get("is_recurring") else "#10B981"
+
+                ctk.CTkLabel(
+                    h_row,
+                    text=f"• {h['name']}:",
+                    width=230,
+                    anchor="w",
+                    font=ctk.CTkFont(size=11)
+                ).pack(side="left")
+
+                ctk.CTkLabel(
+                    h_row,
+                    text=f"[{h_type}]",
+                    width=70,
+                    anchor="w",
+                    font=ctk.CTkFont(size=10, weight="bold"),
+                    text_color=type_color
+                ).pack(side="left")
+
+                ctk.CTkLabel(h_row, text="Rs.", font=ctk.CTkFont(size=11)).pack(side="left", padx=(4, 2))
+                h_entry = ctk.CTkEntry(h_row, width=80, font=ctk.CTkFont(size=11))
+                h_entry.insert(0, str(h.get("default_amount") or "0.00"))
+                h_entry.pack(side="left")
+                h_entry.bind("<KeyRelease>", self._recalculate_totals)
+
+                self.dynamic_surcharges.append((h, h_entry))
+
+        # Row 5: Live Dynamic Summary Card
         summary_card = ctk.CTkFrame(s2_body, fg_color="#0F172A", corner_radius=6)
         summary_card.pack(fill="x", pady=(4, 0))
 
@@ -649,19 +733,20 @@ class StudentAdmissionModal(BaseModal):
         )
         self.btn_save_only.pack(side="right", padx=4)
 
-        # Explicit Return-key navigation for rapid clerk data-entry
+        # Explicit Return-key navigation for rapid clerk data-entry across personas
         self.first_name_entry.bind("<Return>", lambda e: self.last_name_entry.focus_set())
         self.last_name_entry.bind("<Return>", lambda e: self.urdu_name_entry.focus_set())
         self.urdu_name_entry.bind("<Return>", lambda e: self.dob_entry.focus_set())
         self.dob_entry.bind("<Return>", lambda e: self.b_form_entry.focus_set())
-        self.b_form_entry.bind("<Return>", lambda e: self.guardian_name_entry.focus_set())
+        self.b_form_entry.bind("<Return>", lambda e: self.previous_slc_entry.focus_set())
+        self.previous_slc_entry.bind("<Return>", lambda e: self.guardian_name_entry.focus_set())
         self.guardian_name_entry.bind("<Return>", lambda e: self.guardian_urdu_entry.focus_set())
         self.guardian_urdu_entry.bind("<Return>", lambda e: self.guardian_cnic_entry.focus_set())
         self.guardian_cnic_entry.bind("<Return>", lambda e: self.guardian_phone.focus_set())
         self.guardian_phone.bind("<Return>", lambda e: self.guardian_whatsapp.focus_set())
-        self.guardian_whatsapp.bind("<Return>", lambda e: self.address_entry.focus_set())
-        self.address_entry.bind("<Return>", lambda e: self.previous_slc_entry.focus_set())
-        self.previous_slc_entry.bind("<Return>", lambda e: self.adm_fee_entry.focus_set())
+        self.guardian_whatsapp.bind("<Return>", lambda e: self.guardian_email_entry.focus_set())
+        self.guardian_email_entry.bind("<Return>", lambda e: self.address_entry.focus_set())
+        self.address_entry.bind("<Return>", lambda e: self.adm_fee_entry.focus_set())
         self.adm_fee_entry.bind("<Return>", lambda e: self.prospectus_fee_entry.focus_set())
         self.prospectus_fee_entry.bind("<Return>", lambda e: self.security_entry.focus_set())
         self.security_entry.bind("<Return>", lambda e: self.concession_amount_entry.focus_set())
@@ -821,32 +906,44 @@ class StudentAdmissionModal(BaseModal):
         self._recalculate_totals()
 
     def _recalculate_totals(self, event=None) -> None:
-        """Recalculates net monthly fee and total upfront initial payable."""
+        """Recalculates net monthly fee and total upfront initial payable with strict Decimal parsing."""
         sel_class = self.class_var.get()
         base_tuition = self.class_tuition_map.get(sel_class, Decimal("0.00"))
 
         try:
             concession = Decimal(_clean_numeric_input(self.concession_amount_entry.get()))
-        except Exception:
+        except (InvalidOperation, ValueError, Exception):
             concession = Decimal("0.00")
 
         try:
             adm_fee = Decimal(_clean_numeric_input(self.adm_fee_entry.get()))
-        except Exception:
+        except (InvalidOperation, ValueError, Exception):
             adm_fee = Decimal("0.00")
 
         try:
             pros_fee = Decimal(_clean_numeric_input(self.prospectus_fee_entry.get()))
-        except Exception:
+        except (InvalidOperation, ValueError, Exception):
             pros_fee = Decimal("0.00")
 
         try:
             sec_dep = Decimal(_clean_numeric_input(self.security_entry.get()))
-        except Exception:
+        except (InvalidOperation, ValueError, Exception):
             sec_dep = Decimal("0.00")
 
-        net_monthly = max(Decimal("0.00"), base_tuition - concession)
-        one_time_total = adm_fee + pros_fee + sec_dep
+        recurring_surcharges = Decimal("0.00")
+        one_time_surcharges = Decimal("0.00")
+        for fh, entry in getattr(self, "dynamic_surcharges", []):
+            try:
+                amt = Decimal(_clean_numeric_input(entry.get()))
+            except (InvalidOperation, ValueError, Exception):
+                amt = Decimal("0.00")
+            if fh.get("is_recurring"):
+                recurring_surcharges += amt
+            else:
+                one_time_surcharges += amt
+
+        net_monthly = max(Decimal("0.00"), base_tuition - concession + recurring_surcharges)
+        one_time_total = adm_fee + pros_fee + sec_dep + one_time_surcharges
         initial_payable = net_monthly + one_time_total
 
         self.net_monthly_label.configure(text=f"PKR {net_monthly:,.2f}")
@@ -877,6 +974,7 @@ class StudentAdmissionModal(BaseModal):
         rel = self.relation_var.get()
         phone = self.guardian_phone.get().strip()
         wa = self.guardian_whatsapp.get().strip() or None
+        email = self.guardian_email_entry.get().strip() or None
         cnic = self.guardian_cnic_entry.get().strip() or None
         address = self.address_entry.get().strip() or None
         prev_slc = self.previous_slc_entry.get().strip() or None
@@ -923,9 +1021,24 @@ class StudentAdmissionModal(BaseModal):
             adm_fee = Decimal(_clean_numeric_input(self.adm_fee_entry.get()))
             pros_fee = Decimal(_clean_numeric_input(self.prospectus_fee_entry.get()))
             sec_dep = Decimal(_clean_numeric_input(self.security_entry.get()))
-        except Exception:
+        except (InvalidOperation, ValueError, Exception):
             self.parent_view.show_error("Validation Error", "Fee and discount amounts must be numeric.")
             return
+
+        # Build additional dynamic fee heads items
+        additional_fee_items: list[tuple[str, Decimal, str, int]] = []
+        for fh, entry in getattr(self, "dynamic_surcharges", []):
+            try:
+                amt = Decimal(_clean_numeric_input(entry.get()))
+            except (InvalidOperation, ValueError, Exception):
+                amt = Decimal("0.00")
+            if amt > Decimal("0.00"):
+                additional_fee_items.append((
+                    fh["name"],
+                    amt,
+                    fh.get("urdu_name"),
+                    1 if fh.get("is_recurring") else 0
+                ))
 
         try:
             student_dto = StudentDTO(
@@ -942,6 +1055,7 @@ class StudentAdmissionModal(BaseModal):
                 guardian_phone=valid_phone,
                 guardian_whatsapp=wa,
                 guardian_cnic=cnic,
+                guardian_email=email,
                 residential_address=address,
                 previous_school_slc=prev_slc,
             )
@@ -954,6 +1068,7 @@ class StudentAdmissionModal(BaseModal):
                 admission_fee=adm_fee,
                 prospectus_fee=pros_fee,
                 security_deposit=sec_dep,
+                additional_fee_items=additional_fee_items,
                 generate_voucher=generate_voucher
             )
 

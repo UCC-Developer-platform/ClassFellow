@@ -36,6 +36,12 @@ def populated_ui_db(tmp_path):
     db_path = str(tmp_path / "classfellow_ui_test.db")
     conn = init_database(db_path)
 
+    # 0. School Profile
+    conn.execute(
+        "INSERT OR IGNORE INTO school_profiles (name, campus_name, phone, address) "
+        "VALUES ('ClassFellow Pilot School', 'Main Campus', '03001234567', 'Lahore');"
+    )
+
     # 1. Academic Session
     conn.execute(
         "INSERT OR IGNORE INTO academic_sessions (name, start_date, end_date, is_active) "

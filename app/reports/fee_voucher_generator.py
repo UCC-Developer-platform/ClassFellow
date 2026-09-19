@@ -67,8 +67,9 @@ _init_pdf_fonts()
 class FeeVoucherGenerator:
     """Generates print-ready 3-panel A4 fee vouchers."""
 
-    def __init__(self, institution_name: str = "CLASSFELLOW HIGH SCHOOL & ACADEMY"):
+    def __init__(self, institution_name: str = "CLASSFELLOW HIGH SCHOOL & ACADEMY", logo_path: Optional[str] = None):
         self.institution_name = institution_name
+        self.logo_path = logo_path
 
     def render_voucher(
         self,
@@ -137,9 +138,18 @@ class FeeVoucherGenerator:
         c.setFillColorRGB(0.08, 0.15, 0.28)  # Deep Navy / Slate
         c.rect(x, y + h - 28, w, 28, stroke=0, fill=1)
 
+        # Optional Crest / Logo Drawing with Guardrail Check
+        title_x = x + 10
+        if self.logo_path and os.path.exists(self.logo_path):
+            try:
+                c.drawImage(self.logo_path, x + 6, y + h - 26, width=20, height=20, preserveAspectRatio=True, mask='auto')
+                title_x = x + 30
+            except Exception:
+                title_x = x + 10
+
         c.setFillColorRGB(1.0, 1.0, 1.0)
         c.setFont(_FONT_BOLD, 10)
-        c.drawString(x + 10, y + h - 18, self.institution_name.upper())
+        c.drawString(title_x, y + h - 18, self.institution_name.upper())
 
         # Copy Label Badge (Right Aligned in Banner)
         c.setFont(_FONT_BOLD, 9)
@@ -292,10 +302,11 @@ class FeeVoucherGenerator:
 def generate_fee_voucher_pdf(
     invoice_data: dict[str, Any],
     output: Union[str, BytesIO],
-    institution_name: str = "CLASSFELLOW HIGH SCHOOL & ACADEMY"
+    institution_name: str = "CLASSFELLOW HIGH SCHOOL & ACADEMY",
+    logo_path: Optional[str] = None
 ) -> Union[str, BytesIO]:
     """
     Convenience function to generate a 3-panel A4 fee voucher PDF.
     """
-    generator = FeeVoucherGenerator(institution_name=institution_name)
+    generator = FeeVoucherGenerator(institution_name=institution_name, logo_path=logo_path)
     return generator.render_voucher(invoice_data, output)

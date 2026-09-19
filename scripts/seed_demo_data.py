@@ -292,10 +292,31 @@ def seed_demo_database(db_path: str, verbose: bool = True) -> dict:
     att_svc = AttendanceService(conn)
     exam_svc = ExamService(conn)
 
+    # 0. Institutional Profile Seeding
+    from services.school_service import SchoolService
+    from models import SchoolProfileDTO
+    if verbose:
+        print("[0/7] Seeding Institutional Profile (ClassFellow Model High School)...")
+    SchoolService(conn).save_profile(
+        SchoolProfileDTO(
+            school_name="ClassFellow Model High School",
+            school_urdu_name="کلاس فیلو ماڈل ہائی اسکول",
+            campus_name="Main Campus",
+            registration_number="BISE-LHR-2026-9912",
+            affiliation_body="BISE Lahore",
+            principal_name="Prof. Tariq Mehmood",
+            contact_number="03001234567",
+            email="principal@classfellow.edu.pk",
+            website="https://classfellow.edu.pk",
+            address="45-Civic Center, Gulberg III",
+            city="Lahore",
+            slogan="Knowledge, Character, Excellence"
+        )
+    )
+
     # 1. Academic Session
     if verbose:
         print("[1/7] Creating Academic Session 2026-2027...")
-    # Clean up zero-state baseline session placeholder if present before seeding
     conn.execute("UPDATE academic_sessions SET name = '2026-2027' WHERE name = '2026-2027 Academic Session';")
     session_id = student_svc.create_academic_session(
         name="2026-2027",

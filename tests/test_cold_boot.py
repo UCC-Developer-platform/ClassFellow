@@ -9,6 +9,7 @@ Settings, and Dashboard workspaces without crashing or freezing.
 """
 
 import os
+from decimal import Decimal
 import pytest
 
 from database import init_database, get_schema_version
@@ -17,15 +18,17 @@ from ui import has_active_display
 
 
 def test_init_database_on_empty_file(tmp_path):
-    """Verifies that init_database on a clean 0-byte file builds the full v3 schema."""
+    """Verifies that init_database on a clean 0-byte file builds the full v5 schema."""
     cold_db = str(tmp_path / "cold_start.db")
     assert not os.path.exists(cold_db)
+
+    from services.school_service import is_school_profile_configured, setup_initial_school
 
     # Bootstrapping on brand-new file
     conn = init_database(cold_db)
     try:
         assert os.path.exists(cold_db)
-        assert get_schema_version(conn) == 4
+        assert get_schema_version(conn) == 5
 
         # Verify all essential tables exist
         cur = conn.cursor()
@@ -33,6 +36,7 @@ def test_init_database_on_empty_file(tmp_path):
         tables = {row[0] for row in cur.fetchall()}
 
         expected_tables = {
+            "school_profiles",
             "academic_sessions",
             "students",
             "class_groups",
@@ -51,7 +55,20 @@ def test_init_database_on_empty_file(tmp_path):
         for t in expected_tables:
             assert t in tables, f"Expected table '{t}' was not created during cold bootstrap!"
 
-        # Verify baseline academic session and class group seeded on zero-state
+        # Zero-state database must have fee heads catalog but no synthetic mock classes/sessions
+        assert is_school_profile_configured(conn) is False
+
+        # Configure school via Mother Form setup service
+        p_id, s_id = setup_initial_school(
+            conn,
+            profile_data={"school_name": "Allied Model School", "contact_number": "03001234567"},
+            session_data={"name": "2026-2027 Academic Session", "start_date": "2026-04-01", "end_date": "2027-03-31"},
+            classes_data=[{"name": "Class 1", "section_or_batch": "Section A", "monthly_tuition_fee": Decimal("3500.00")}]
+        )
+        assert p_id is not None
+        assert s_id is not None
+        assert is_school_profile_configured(conn) is True
+
         cur.execute("SELECT COUNT(*) FROM academic_sessions WHERE is_active = 1;")
         assert cur.fetchone()[0] >= 1
 
@@ -82,8 +99,21 @@ def test_app_cold_start_and_workspace_navigation(tmp_path):
         raise
 
     try:
-        # Schema must be auto-bootstrapped to version 4
-        assert get_schema_version(app.db_conn) == 4
+        # Schema must be auto-bootstrapped to version 5
+        assert get_schema_version(app.db_conn) == 5
+
+        # Verify Route Guard: is_school_profile_configured is initially False
+        from services.school_service import is_school_profile_configured, setup_initial_school
+        assert is_school_profile_configured(app.db_conn) is False
+
+        # Execute Mother Form setup to transition school to configured state
+        setup_initial_school(
+            app.db_conn,
+            profile_data={"school_name": "ClassFellow Grammar School", "contact_number": "03001234567"},
+            session_data={"name": "2026-2027 Academic Session", "start_date": "2026-04-01", "end_date": "2027-03-31"},
+            classes_data=[{"name": "Class 1", "section_or_batch": "Section A", "monthly_tuition_fee": Decimal("3500.00")}]
+        )
+        assert is_school_profile_configured(app.db_conn) is True
 
         # Sidebar navigation buttons must be 2-column aligned SidebarNavButton instances
         assert hasattr(app, "sidebar_buttons")
@@ -136,6 +166,7 @@ def test_app_cold_start_and_workspace_navigation(tmp_path):
             modal.guardian_name.insert(0, "Mohsen Farhan Butt")
             modal.guardian_urdu_name.insert(0, "بٹ فرحان محسن")
             modal.guardian_phone.insert(0, "03213000625")
+            modal.guardian_email.insert(0, "mohsen@example.com")
             modal.discount_entry.insert(0, "500.00")
 
             # 5. Submit admission
@@ -144,7 +175,7 @@ def test_app_cold_start_and_workspace_navigation(tmp_path):
             # Verify student is admitted in SQLite
             cur = app.db_conn.cursor()
             cur.execute(
-                "SELECT id, admission_number, first_name, urdu_name, guardian_urdu_name "
+                "SELECT id, admission_number, first_name, urdu_name, guardian_urdu_name, guardian_email "
                 "FROM students WHERE guardian_phone = '03213000625';"
             )
             row = cur.fetchone()
@@ -152,6 +183,7 @@ def test_app_cold_start_and_workspace_navigation(tmp_path):
             assert row[2] == "Abdullah Mohsen"
             assert row[3] == "بٹ محسن عبداللہ"
             assert row[4] == "بٹ فرحان محسن"
+            assert row[5] == "mohsen@example.com"
 
             # Verify enrollment in the new class
             cur.execute("SELECT class_group_id FROM enrollments WHERE student_id = ?;", (row[0],))

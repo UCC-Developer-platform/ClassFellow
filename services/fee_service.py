@@ -703,16 +703,19 @@ def process_walkin_admission(
     prospectus_fee: Decimal = Decimal("0.00"),
     security_deposit: Decimal = Decimal("0.00"),
     prior_arrears: Decimal = Decimal("0.00"),
+    additional_fee_items: Optional[list[tuple[str, Decimal, str, int]]] = None,
     voucher_output_dir: Optional[str] = None,
     generate_voucher: bool = True,
-    institution_name: str = "CLASSFELLOW HIGH SCHOOL & ACADEMY"
+    institution_name: str = "CLASSFELLOW HIGH SCHOOL & ACADEMY",
+    logo_path: Optional[str] = None
 ) -> str:
     """
     Executes atomic walk-in admission transaction:
       1. Registers student identity & guardian details in students table.
       2. Enrolls student in target class group & academic session.
       3. Generates itemized initial admission fee invoice (Tuition, Admission Fee,
-         Registration/Prospectus, Security Deposit, Prior Arrears minus Concession).
+         Registration/Prospectus, Security Deposit, Prior Arrears, Additional Surcharges
+         minus Concession).
       4. Renders a print-ready 3-panel A4 fee voucher PDF via ReportLab.
 
     Returns:
@@ -733,6 +736,18 @@ def process_walkin_admission(
         valid_until = f"{month_year}-20"
 
     cursor = conn.cursor()
+
+    # Look up institutional branding from school_profiles if default institution_name
+    if institution_name == "CLASSFELLOW HIGH SCHOOL & ACADEMY":
+        cursor.execute("SELECT name, logo_path FROM school_profiles ORDER BY id ASC LIMIT 1;")
+        sp_row = cursor.fetchone()
+        if sp_row:
+            sp_name = sp_row[0] if isinstance(sp_row, (tuple, list)) else sp_row["name"]
+            sp_logo = sp_row[1] if isinstance(sp_row, (tuple, list)) else sp_row["logo_path"]
+            if sp_name:
+                institution_name = str(sp_name).upper()
+            if not logo_path and sp_logo:
+                logo_path = sp_logo
 
     # Resolve active session if not explicitly provided
     if session_id is None:
@@ -786,6 +801,14 @@ def process_walkin_admission(
         if prior_arrears > Decimal("0.00"):
             items_to_create.append(("Previous Arrears", prior_arrears, "سابقہ واجبات", 1))
 
+        if additional_fee_items:
+            for item in additional_fee_items:
+                if len(item) == 4:
+                    h_name, amt, h_urdu, is_rec = item
+                    dec_amt = Decimal(str(amt))
+                    if dec_amt > Decimal("0.00"):
+                        items_to_create.append((str(h_name), dec_amt, str(h_urdu) if h_urdu else None, int(is_rec)))
+
         total_payable = sum(amt for _, amt, _, _ in items_to_create)
         discount_amount = concession_discount
         net_due = max(Decimal("0.00"), total_payable - discount_amount)
@@ -834,6 +857,6 @@ def process_walkin_admission(
 
     safe_adm = re.sub(r"[^\w\-]", "_", str(adm_number))
     pdf_path = os.path.join(out_dir, f"admission_voucher_{safe_adm}_{month_year}.pdf")
-    generate_fee_voucher_pdf(invoice_data, pdf_path, institution_name=institution_name)
+    generate_fee_voucher_pdf(invoice_data, pdf_path, institution_name=institution_name, logo_path=logo_path)
 
     return pdf_path

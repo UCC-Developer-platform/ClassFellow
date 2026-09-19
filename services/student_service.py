@@ -219,8 +219,8 @@ class StudentService:
                     admission_number, first_name, last_name, urdu_name, gender,
                     date_of_birth, b_form_number, guardian_name, guardian_urdu_name,
                     guardian_relation, guardian_phone, guardian_whatsapp, guardian_cnic,
-                    residential_address, emergency_contact, previous_school_slc, is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    guardian_email, residential_address, emergency_contact, previous_school_slc, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     admission_no,
@@ -236,6 +236,7 @@ class StudentService:
                     valid_phone,
                     valid_whatsapp,
                     student_data.guardian_cnic,
+                    student_data.guardian_email.strip() if student_data.guardian_email else None,
                     student_data.residential_address,
                     student_data.emergency_contact,
                     getattr(student_data, "previous_school_slc", None),
@@ -324,6 +325,7 @@ class StudentService:
                 s.urdu_name LIKE :like_q OR
                 s.guardian_name LIKE :like_q OR
                 s.guardian_phone LIKE :like_q OR
+                s.guardian_email LIKE :like_q OR
                 e.roll_number LIKE :like_q
             )
             """
@@ -438,6 +440,7 @@ class StudentService:
                     guardian_phone = ?,
                     guardian_whatsapp = ?,
                     guardian_cnic = ?,
+                    guardian_email = ?,
                     residential_address = ?,
                     emergency_contact = ?,
                     previous_school_slc = ?,
@@ -458,6 +461,7 @@ class StudentService:
                     valid_phone,
                     valid_whatsapp,
                     student_data.guardian_cnic,
+                    student_data.guardian_email.strip() if student_data.guardian_email else None,
                     student_data.residential_address,
                     student_data.emergency_contact,
                     getattr(student_data, "previous_school_slc", None),

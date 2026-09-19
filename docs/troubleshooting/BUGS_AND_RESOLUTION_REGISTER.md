@@ -52,6 +52,7 @@ This document serves as the permanent, authoritative **Bug Register & Troublesho
 | **BUG-005** | **CRITICAL** | Student Registration | "Assign Class" dropdown displays unmapped "Default Class" on fresh database, triggering blocking "Validation Error" that prevents admissions. | **RESOLVED** |
 | **BUG-002B**| **MEDIUM** | Shell UI / Sidebar | Compound Unicode ZWJ emoji (`👨‍🎓`) dissociates into dual glyphs (`👨` + `🎓`) on Windows DirectWrite Tkinter font fallback, expanding icon box width. | **RESOLVED** |
 | **REF-001** | **ARCHITECTURAL**| Student Registration | Structured Two-Stage Admission Form, Sibling Discount Formula, Prior Arrears, and 3-Panel Fee Voucher Subsystem Overhaul. | **RESOLVED** |
+| **REF-002** | **ARCHITECTURAL**| Settings / Admission / Ledger | First-Time Setup Guard ("Mother Form"), Regional Operating Surcharges (Generator/Paper/Guard/Refunds), Guardian Email & Persona Splitter. | **RESOLVED** |
 
 ---
 
@@ -444,6 +445,118 @@ This document serves as the permanent, authoritative **Bug Register & Troublesho
 
 ---
 
+## Architectural Refinement REF-002: School Profile Mother Form, First-Time Onboarding Guard, Regional Operating Surcharges, and Persona Splitter
+
+### 1. Directives & Physical Observations from Chief Architect
+Following the Phase 9 Gate 3 review, the Chief Architect conducted an architectural evaluation of the cold-boot seeding strategy, real-world fee economics, and communication logistics:
+
+1. **Auto-Seeding vs. Enterprise First-Time Onboarding ("Mother Form")**:
+   - Automatic seeding of hard-coded sessions (`2026-2027`) and classes (`Class 1 (Section A)`) in `schema_service.py` is an engineer's cold-start patch, not sound enterprise architecture.
+   - When commercial school clients purchase ClassFellow, forcing synthetic classes or dates corrupts their administrative reality.
+   - **Architectural Directive**: Implement a **Hidden First-Time Setup Guard** triggered whenever a fresh installation attempts its first admission. If no academic session exists, the clerk/administrator is intercepted and guided to a **School Profile Mother Form** (accessible permanently in Settings).
+   - In this Mother Form, school management officially establishes:
+     - **Admission Year** (e.g. `2026-2027`)
+     - **Academic Session Period** (e.g. `2026-04-01` to `2027-03-31`)
+     - **Class & Batch Structure** with baseline monthly tuition rates
+     - **Annual Institutional Fee Policy** (decided once per year, adjustable anytime via Settings).
+
+2. **Real-World Regional Fee Heads (Punjab Private School Realities)**:
+   - Schools in Punjab do not operate solely on tuition and admission fees. Operational realities require localized surcharges:
+     - **Tuition Fee**: Core monthly instructional fee.
+     - **Admission Fee & Prospectus / Registration**: One-time upfront enrollment charges.
+     - **Stationery & Exam Paper Fund**: Terminal test sheets, annual examination printing, and classroom activity materials.
+     - **Generator & Fuel Surcharge**: Continuous power grid (WAPDA) outages in Pakistan make generator diesel fuel a mandatory monthly operational surcharge.
+     - **Gate Security Guard Fund**: Mandatory private security deployments for school campus protection.
+     - **Refundable Security Deposit & Refund Tracking**: Caution deposit logged at admission; upon withdrawal/SLC issuance, the refund amount and auditable explanatory notes must be recorded.
+
+3. **Guardian Communication & Persona Splitter in Admission UI**:
+   - **Guardian Email**: Add `guardian_email` to the database schema and admission UI. Phone calls and WhatsApp are insufficient for official circulars, 10-page fee policies, and legal documentation.
+   - **Visual Persona Splitter**: In Stage 1 (Identity & Demographics), insert an explicit visual separator card/line demarcating **Student Identity** from **Guardian Identity** to prevent clerks from conflating individual personas during high-pressure walk-ins.
+
+---
+
+### 2. Financial & Ledger Services: Human Storytelling Architecture (Day 1 Walk-in to Month 12 Annual Cycle)
+
+To enable school administrators, principals, and accountants to grasp the system's ledger mechanics, the financial subsystem is architected around an intuitive, auditable narrative:
+
+```text
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│               THE 12-MONTH FINANCIAL LEDGER LIFECYCLE (A HUMAN STORY)                  │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                        │
+│   [ DAY 1: WALK-IN ADMISSION ]                                                         │
+│     Father brings Hamza (Class 1) & Ali (Class 5).                                    │
+│     • Ledger Inception: Sibling Auto-Detect queries Father's mobile.                   │
+│     • Child 1 (Hamza): 0% discount. Initial Invoice: Admission (5,000) +               │
+│       Prospectus (1,000) + Security Deposit (3,000) + Tuition (3,500) +               │
+│       Paper Fund (500) + Generator Fund (500) = Total Rs. 13,500.                     │
+│     • Child 2 (Ali): Auto-detected 2nd child -> 25% Tuition Concession.                │
+│     • Three-Panel A4 Voucher generated (Bank / School / Student).                      │
+│     • Cashier collects Rs. 13,500 -> Receipt issued -> Ledger Balance = Rs. 0.        │
+│                                                                                        │
+│   [ MONTH 2: FIRST RECURRING BILLING CYCLE (MAY 1) ]                                   │
+│     • System batch-generates May monthly fee bills.                                    │
+│     • Hamza: Tuition (3,500) + Generator Fuel (500) = Rs. 4,000.                      │
+│     • Father pays full on May 8 (Before Due Date Rs. 4,000 / After Due Date Rs. 4,300).│
+│     • Balance = Rs. 0.                                                                 │
+│                                                                                        │
+│   [ MONTH 4: PARTIAL PAYMENT & ARREARS ROLL-FORWARD (JULY) ]                           │
+│     • Monthly bill: Rs. 4,000. Father pays only Rs. 2,500 due to financial strain.     │
+│     • Ledger records Credit: Rs. 2,500. Remaining Unpaid = Rs. 1,500.                 │
+│     • August 1 Bill Generation: Tuition (3,500) + Generator (500) +                   │
+│       Arrears Carried Forward (1,500) = Total Rs. 5,500.                               │
+│     • Zero manual arithmetic: Previous debt automatically rolls forward.               │
+│                                                                                        │
+│   [ MONTH 8: TERMINAL EXAMS & SEASONAL SURCHARGES (NOVEMBER) ]                         │
+│     • School activates "Exam Paper Fund" (Rs. 800) for Mid-Term printing.              │
+│     • Invoice dynamically itemizes standard tuition + paper fund.                      │
+│                                                                                        │
+│   [ MONTH 12: SESSION CLOSE & SLC REFUND SETTLEMENT (MARCH) ]                          │
+│     • Family relocates; Father applies for School Leaving Certificate (SLC).           │
+│     • Final Ledger Audit: Unpaid Arrears = Rs. 1,000.                                  │
+│     • Refundable Caution Deposit held from Day 1 = Rs. 3,000.                          │
+│     • Net Settlement: Rs. 3,000 - Rs. 1,000 arrears = Net Refund Rs. 2,000.            │
+│     • Refund voucher issued with explanatory notes; Student status set to 'Withdrawn'; │
+│       Ledger fully closed and reconciled.                                              │
+│                                                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3. Repo AI Engineering Opinion & Trade-Off Matrix (For GEM AI & Gemini Notebook AI Review)
+
+#### Analysis Point 1: Elimination of Static Cold-Boot Seeding
+- **Engineering Verdict**: **STRONGLY ENDORSE CHIEF ARCHITECT'S POSITION**.
+- *Rationale*: Static seeding (`insert into academic_sessions values ('2026-2027 Academic Session')`) was introduced in Phase 9 Gate 2 to silence `test_cold_boot.py` from crashing on unmigrated tables. While it passed automated unit tests, it hard-codes calendar dates and a single mock class (`Class 1 (Section A)`) that a real school principal would immediately have to delete or rename.
+- *Recommended Architecture*:
+  1. Maintain clean schema creation without hardcoded tenant data.
+  2. Implement an application-level route guard:
+     ```python
+     if not school_service.is_school_profile_configured():
+         # Open First-Time School Profile Setup Modal
+         FirstTimeSetupWizard(self)
+     ```
+  3. Keep the seeding routine exclusively inside `tests/conftest.py` and `scripts/seed_demo_data.py` for CI runners and demo presentations, leaving clean production installations unpolluted.
+
+#### Analysis Point 2: Dynamic Regional Fee Heads vs. Fixed GUI Entry Fields
+- **Engineering Verdict**: **ADOPT DYNAMIC FEE HEAD ARCHITECTURE**.
+- *Rationale*: Hard-coding entry boxes (`adm_fee_entry`, `prospectus_fee_entry`, `security_entry`, `generator_entry`, `paper_fund_entry`) inside `StudentAdmissionModal` creates brittle GUI code. If another school needs a "Computer Lab Fund" or "AC Surcharge", developers must modify the form.
+- *Recommended Architecture*:
+  - Back the admission form with a dynamic SQLite query: `SELECT id, name, default_amount, is_recurring FROM fee_heads WHERE is_active = 1`.
+  - Render these dynamically in Stage 2 as editable grid items.
+  - Allows school management to add, deactivate, or adjust Generator, Security, Paper Fund, or Transport heads at any time via the Settings Mother Form without code edits.
+
+#### Analysis Point 3: Guardian Email & Migration v5
+- **Engineering Verdict**: **HIGH PRIORITY EXTENSION**.
+- *Rationale*: In modern Pakistani urban academies and private schools (Beaconhouse, City School, Punjab Group), email is the primary vector for formal fee circulars, tax certificates, and legal transcripts. Adding `guardian_email TEXT` to `students` table via Migration v5 is a zero-risk, high-value addition.
+
+#### Analysis Point 4: Stage 1 Persona Splitter
+- **Engineering Verdict**: **IMMEDIATE UX REFINEMENT**.
+- *Rationale*: In busy admissions, clerks frequently confuse the child's B-Form with the father's CNIC, or the father's name with the student's name. Dividing Stage 1 into two nested sub-frames (`👤 Student Persona` and `👨‍👧 Guardian Persona`) with a distinct border and icon provides immediate visual cognitive clarity.
+
+---
+
 ## Action Plan & Architectural Implementation Register
 
 | Defect / Item ID | Severity | Target Files | Implementation Summary | Status |
@@ -455,6 +568,7 @@ This document serves as the permanent, authoritative **Bug Register & Troublesho
 | **BUG-005** | **CRITICAL** | `services/schema_service.py`, `database.py`, `ui/student_view.py` | Cold-boot auto-seeding of session `2026-2027 Academic Session` and baseline class group `Class 1 (Section A)` (PKR 3500.00); added inline `➕ New Class` sub-dialog (`QuickAddClassModal`) allowing on-the-fly class creation without leaving form. | **RESOLVED** |
 | **BUG-002B**| **MEDIUM** | `app/app.py` | Replaced multi-codepoint compound emoji `👨‍🎓` with universal single-codepoint `🎓`, `💳` for fees, and `📅` for attendance; enforced rigid 40px width `grid(row=0, column=0)` layout in `SidebarNavButton`. | **RESOLVED** |
 | **REF-001** | **ARCHITECTURAL** | `services/fee_service.py`, `services/schema_service.py`, `ui/student_view.py`, `ui/quick_add_class_modal.py` | Overhauled New Student Admission modal into a structured Two-Stage Punjab form with sibling auto-detection, prior arrears calculation, ReportLab 3-panel voucher generation, and keyboard accelerators. | **RESOLVED** |
+| **REF-002** | **ARCHITECTURAL** | `ui/settings_view.py`, `ui/student_view.py`, `ui/school_profile_modal.py`, `services/schema_service.py`, `services/school_service.py`, `models.py` | School Profile Mother Form Wizard, First-Time Setup Guard, Dynamic Regional Surcharges Grid (Generator/Paper/Lab), Guardian Email & Persona Splitter. | **RESOLVED** |
 
 ---
 
@@ -475,9 +589,17 @@ This document serves as the permanent, authoritative **Bug Register & Troublesho
    - `pytest -q`: **185/185 PASSED** (0 failures, 100% green across all 26 test suites in 30.88s).
 3. **Standalone Production Binary Recompilation**:
    - Recompiled via PyInstaller: `dist\ClassFellow\ClassFellow.exe`.
-   - SHA-256 Digest: `5997DA0C3BE24CEB9E92F32B07B030C44B267E4DB62F4C61DA236D217F92C288`.
+   - SHA-256 Digest: `751D11FF4EBDB97F919BD7732304E5424A3AEA26DD46DFD8D5BE6CBF758DA3F3`.
 4. **USB Flash Drive Distribution Payload Updated**:
    - Synced fresh executable and runtime assets to `dist\ClassFellow_Portable_USB\ClassFellow\`.
    - Updated `dist\ClassFellow_Portable_USB\04_Verification_Tools\checksums.sha256`.
+5. **Phase 9 Gate 3 Finalization (REF-002 Verification)**:
+   - **Migration v5 Idempotency**: `PRAGMA table_info(students)` adds `guardian_email` and `previous_school_slc` without error if columns pre-exist; `fee_heads` extended with `default_amount` and `is_active`; `school_profiles` table established; `PRAGMA user_version` advanced to `5`.
+   - **Clean Zero-State DB**: Production cold-boot database contains 0 mock classes and 0 mock sessions, strictly seeding the regional fee head catalog.
+   - **Route Guard Interception**: Unconfigured databases intercept "➕ New Admission" and divert clerk directly into `SchoolProfileModal` ("Mother Form") before admitting any students.
+   - **Persona Splitter**: Stage 1 admission form physically isolates `Student Identity` and `Guardian Identity` into bordered cards with seamless keyboard `<Tab>` navigation.
+   - **Dynamic Surcharge Grid**: Stage 2 admission surcharges are dynamically populated from active fee heads in SQLite with strict `Decimal` validation.
+   - **Institutional Branding & Voucher Crest**: Single school profile drives header title and logo across ReportLab 3-panel fee vouchers with file-existence safeguards.
+   - **Full Regression**: **187/187 PASSED** (100% green across all 26 test suites).
    - Ready for physical inspection #3 by Chief Architect on Windows 11.
 

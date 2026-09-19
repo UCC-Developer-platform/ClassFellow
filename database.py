@@ -9,7 +9,6 @@ import os
 import sqlite3
 from contextlib import contextmanager
 from decimal import Decimal
-from typing import Optional
 
 # -----------------------------------------------------------------------------
 # Register Custom Decimal Adapters and Converters
@@ -116,8 +115,8 @@ def set_schema_version(conn: sqlite3.Connection, version: int) -> None:
 def init_database(db_path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
     """
     Creates a connection and runs all pending schema migrations up to the latest version.
-    Ensures baseline zero-state academic session and class group exist.
-    
+    Ensures baseline zero-state standard fee heads exist.
+
     Returns:
         A fully initialized, migrated sqlite3.Connection instance.
     """
@@ -126,4 +125,3 @@ def init_database(db_path: str = DEFAULT_DB_PATH) -> sqlite3.Connection:
     migrate_to_latest(conn)
     seed_default_academic_data(conn)
     return conn
-

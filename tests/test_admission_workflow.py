@@ -28,9 +28,16 @@ def cold_db_path(tmp_path):
 
 @pytest.fixture
 def migrated_db(tmp_path):
-    """Provides an initialized, fully migrated database connection."""
+    """Provides an initialized, fully migrated database connection configured with initial school."""
     db_path = str(tmp_path / "migrated_admission.db")
     conn = init_database(db_path)
+    from services.school_service import setup_initial_school
+    setup_initial_school(
+        conn,
+        profile_data={"school_name": "ClassFellow Model School", "contact_number": "03001234567"},
+        session_data={"name": "2026-2027 Academic Session", "start_date": "2026-04-01", "end_date": "2027-03-31"},
+        classes_data=[{"name": "Class 1", "section_or_batch": "Section A", "monthly_tuition_fee": Decimal("3500.00")}]
+    )
     yield conn
     conn.close()
 
@@ -39,40 +46,28 @@ def migrated_db(tmp_path):
 # 1. Cold-Boot Database Initialization & Seeding Test
 # =============================================================================
 
-def test_cold_boot_seeding_and_schema_v4(cold_db_path):
+def test_cold_boot_seeding_and_schema_v5(cold_db_path):
     """
     Verifies that cold-boot initialization on a brand-new 0-byte file builds
-    the full v4 schema and seeds the baseline session, class, and fee heads.
+    the full v5 schema, keeps production DB clean of mock classes, and seeds fee heads.
     """
     assert not os.path.exists(cold_db_path)
+
+    from services.school_service import is_school_profile_configured, setup_initial_school
 
     conn = init_database(cold_db_path)
     try:
         assert os.path.exists(cold_db_path)
-        assert get_schema_version(conn) == 4
+        assert get_schema_version(conn) == 5
 
         cur = conn.cursor()
 
-        # 1. Active session '2026-2027 Academic Session'
-        cur.execute("SELECT id, name, is_active FROM academic_sessions WHERE is_active = 1;")
-        session = cur.fetchone()
-        assert session is not None
-        assert "2026-2027" in session[1]
-        assert session[2] == 1
+        # 1. Clean zero-state database: no synthetic mock classes or sessions
+        assert is_school_profile_configured(conn) is False
+        cur.execute("SELECT COUNT(*) FROM class_groups;")
+        assert cur.fetchone()[0] == 0
 
-        # 2. Baseline class group 'Class 1 (Section A)' with base tuition 3500.00
-        cur.execute("SELECT name, section_or_batch, monthly_tuition_fee, group_type FROM class_groups;")
-        classes = cur.fetchall()
-        assert len(classes) >= 1
-        c_names = [c[0] for c in classes]
-        assert "Class 1" in c_names
-
-        class1 = [c for c in classes if c[0] == "Class 1"][0]
-        assert class1[1] == "Section A"
-        assert Decimal(str(class1[2])) == Decimal("3500.00")
-        assert class1[3] == "SchoolClass"
-
-        # 3. Standard fee heads
+        # 2. Standard regional fee heads catalog seeded
         cur.execute("SELECT name, is_recurring FROM fee_heads;")
         heads = {row[0]: row[1] for row in cur.fetchall()}
 
@@ -81,6 +76,20 @@ def test_cold_boot_seeding_and_schema_v4(cold_db_path):
         assert "Registration / Prospectus" in heads and heads["Registration / Prospectus"] == 0
         assert "Security Deposit" in heads and heads["Security Deposit"] == 0
         assert "Previous Arrears" in heads and heads["Previous Arrears"] == 1
+        assert "Generator & Fuel Surcharge" in heads
+        assert "Stationery & Exam Paper Fund" in heads
+
+        # 3. Setup via Mother Form
+        p_id, s_id = setup_initial_school(
+            conn,
+            profile_data={"school_name": "ClassFellow Grammar School", "contact_number": "03001234567"},
+            session_data={"name": "2026-2027 Academic Session", "start_date": "2026-04-01", "end_date": "2027-03-31"},
+            classes_data=[{"name": "Class 1", "section_or_batch": "Section A", "monthly_tuition_fee": Decimal("3500.00")}]
+        )
+        assert is_school_profile_configured(conn) is True
+
+        cur.execute("SELECT COUNT(*) FROM class_groups;")
+        assert cur.fetchone()[0] == 1
     finally:
         conn.close()
 
@@ -114,6 +123,7 @@ def test_extended_student_schema_persistence(migrated_db):
         guardian_phone="0300-1122334",
         guardian_whatsapp="+923001122334",
         guardian_cnic="35201-1234567-3",
+        guardian_email="haris.guardian@example.com",
         residential_address="House 45, Street 9, Sector G, Lahore",
         previous_school_slc="SLC-2026-5542 (Crescent Model School)",
         emergency_contact="03009988776"
@@ -137,6 +147,7 @@ def test_extended_student_schema_persistence(migrated_db):
     assert student["guardian_phone"] == "03001122334"
     assert student["guardian_whatsapp"] == "03001122334"
     assert student["guardian_cnic"] == "35201-1234567-3"
+    assert student["guardian_email"] == "haris.guardian@example.com"
     assert student["residential_address"] == "House 45, Street 9, Sector G, Lahore"
     assert student["previous_school_slc"] == "SLC-2026-5542 (Crescent Model School)"
 
@@ -442,3 +453,148 @@ def test_inline_class_creation_workflow(migrated_db):
     classes = student_svc.get_class_groups(session_id=session_id)
     class_names = [f"{c['name']} ({c['section_or_batch']})" for c in classes]
     assert "Class 5 (Blue)" in class_names
+
+
+# =============================================================================
+# 7. Route Guard & Dynamic Surcharges Verification (REF-002)
+# =============================================================================
+
+def test_route_guard_and_mother_form_setup(cold_db_path):
+    """
+    Verifies that is_school_profile_configured safely guards unconfigured databases
+    and transitions to True after complete Mother Form setup.
+    """
+    from services.school_service import (
+        is_school_profile_configured,
+        setup_initial_school,
+        get_active_fee_heads
+    )
+
+    conn = init_database(cold_db_path)
+    try:
+        # Route guard must block on fresh database
+        assert is_school_profile_configured(conn) is False
+
+        # Execute Mother Form setup
+        p_id, s_id = setup_initial_school(
+            conn,
+            profile_data={
+                "school_name": "Punjab Stars Grammar School",
+                "school_urdu_name": "پنجاب اسٹارز گرائمر اسکول",
+                "campus_name": "City Campus",
+                "contact_number": "03009988776",
+                "email": "info@punjabstars.edu.pk",
+                "city": "Faisalabad"
+            },
+            session_data={"name": "2026-2027 Academic Session", "start_date": "2026-04-01", "end_date": "2027-03-31"},
+            classes_data=[
+                {"name": "Class 1", "section_or_batch": "Rose", "monthly_tuition_fee": Decimal("3000.00")},
+                {"name": "Class 2", "section_or_batch": "Tulip", "monthly_tuition_fee": Decimal("3200.00")}
+            ],
+            fee_heads_data=[
+                {"id": None, "name": "Generator & Fuel Surcharge", "urdu_name": "جنریٹر چارجز", "is_recurring": 1, "default_amount": Decimal("600.00"), "is_active": 1},
+                {"id": None, "name": "Stationery & Exam Paper Fund", "urdu_name": "امتحان فنڈ", "is_recurring": 0, "default_amount": Decimal("1200.00"), "is_active": 1}
+            ]
+        )
+        assert p_id is not None
+        assert s_id is not None
+
+        # Route guard must now approve
+        assert is_school_profile_configured(conn) is True
+
+        # Verify active fee heads retrieved
+        active_heads = get_active_fee_heads(conn)
+        active_names = [h["name"] for h in active_heads]
+        assert "Generator & Fuel Surcharge" in active_names
+        assert "Stationery & Exam Paper Fund" in active_names
+    finally:
+        conn.close()
+
+
+def test_walkin_admission_with_dynamic_surcharges(migrated_db, tmp_path):
+    """
+    Tests end-to-end walk-in admission with dynamic operational surcharges
+    (Generator Fuel, Paper Fund) recorded on the invoice and branded with school title.
+    """
+    fee_svc = FeeService(migrated_db)
+    cur = migrated_db.cursor()
+
+    cur.execute("SELECT id, session_id FROM class_groups LIMIT 1;")
+    cg_row = cur.fetchone()
+    class_id, session_id = cg_row[0], cg_row[1]
+
+    student_dto = StudentDTO(
+        admission_number="CF-2026-8801",
+        first_name="Bilal",
+        last_name="Ahmed",
+        urdu_name="بلال احمد",
+        gender="Male",
+        guardian_name="Ahmed Raza",
+        guardian_phone="03007654321",
+        guardian_email="ahmed.raza@example.com",
+        residential_address="Gulberg, Lahore"
+    )
+
+    additional_surcharges = [
+        ("Generator & Fuel Surcharge", Decimal("500.00"), "جنریٹر ایندھن فنڈ", 1),
+        ("Stationery & Exam Paper Fund", Decimal("1000.00"), "کاغذ فنڈ", 0),
+    ]
+
+    voucher_dir = str(tmp_path / "dynamic_vouchers")
+    pdf_path = fee_svc.process_walkin_admission(
+        student_data=student_dto,
+        class_group_id=class_id,
+        session_id=session_id,
+        concession_discount=Decimal("200.00"),
+        admission_fee=Decimal("2000.00"),
+        prospectus_fee=Decimal("500.00"),
+        security_deposit=Decimal("1000.00"),
+        additional_fee_items=additional_surcharges,
+        voucher_output_dir=voucher_dir,
+        generate_voucher=True
+    )
+
+    assert os.path.exists(pdf_path)
+    assert os.path.getsize(pdf_path) > 1000
+
+    # Verify student record has guardian_email
+    cur.execute("SELECT guardian_email FROM students WHERE admission_number = 'CF-2026-8801';")
+    assert cur.fetchone()[0] == "ahmed.raza@example.com"
+
+    # Verify invoice total:
+    # Tuition (3500) + Admission (2000) + Prospectus (500) + Security (1000) + Generator (500) + Paper (1000) = 8500
+    # Discount: 200 -> Net Due: 8300
+    cur.execute(
+        """
+        SELECT fi.total_payable, fi.discount_amount, fi.net_due
+        FROM fee_invoices fi
+        JOIN enrollments e ON fi.enrollment_id = e.id
+        JOIN students s ON e.student_id = s.id
+        WHERE s.admission_number = 'CF-2026-8801';
+        """
+    )
+    inv_row = cur.fetchone()
+    assert inv_row is not None
+    assert Decimal(str(inv_row[0])) == Decimal("8500.00")
+    assert Decimal(str(inv_row[1])) == Decimal("200.00")
+    assert Decimal(str(inv_row[2])) == Decimal("8300.00")
+
+    # Verify dynamic invoice items recorded in SQLite
+    cur.execute(
+        """
+        SELECT fh.name, fii.amount
+        FROM fee_invoice_items fii
+        JOIN fee_heads fh ON fii.fee_head_id = fh.id
+        JOIN fee_invoices fi ON fii.invoice_id = fi.id
+        JOIN enrollments e ON fi.enrollment_id = e.id
+        JOIN students s ON e.student_id = s.id
+        WHERE s.admission_number = 'CF-2026-8801';
+        """
+    )
+    items_map = {r[0]: Decimal(str(r[1])) for r in cur.fetchall()}
+    assert items_map["Tuition Fee"] == Decimal("3500.00")
+    assert items_map["Admission Fee"] == Decimal("2000.00")
+    assert items_map["Registration / Prospectus"] == Decimal("500.00")
+    assert items_map["Security Deposit"] == Decimal("1000.00")
+    assert items_map["Generator & Fuel Surcharge"] == Decimal("500.00")
+    assert items_map["Stationery & Exam Paper Fund"] == Decimal("1000.00")

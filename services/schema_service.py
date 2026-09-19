@@ -10,7 +10,7 @@ import sqlite3
 from typing import Callable
 from database import get_schema_version, set_schema_version
 
-SCHEMA_VERSION_CURRENT = 4
+SCHEMA_VERSION_CURRENT = 5
 
 
 def migration_v1_initial_schema(conn: sqlite3.Connection) -> None:
@@ -369,11 +369,59 @@ def migration_v4_punjab_admission_spec(conn: sqlite3.Connection) -> None:
     set_schema_version(conn, 4)
 
 
+def migration_v5_school_profile_and_dynamic_fees(conn: sqlite3.Connection) -> None:
+    """
+    Executes Migration v5:
+      1. Adds guardian_email and ensures previous_school_slc on students table.
+      2. Adds default_amount and is_active to fee_heads table.
+      3. Creates school_profiles table for institutional branding, contacts, and logo.
+    """
+    with conn:
+        cur = conn.cursor()
+
+        # 1. Update students table
+        cur.execute("PRAGMA table_info(students);")
+        student_cols = {row[1] for row in cur.fetchall()}
+        if "guardian_email" not in student_cols:
+            conn.execute("ALTER TABLE students ADD COLUMN guardian_email TEXT;")
+        if "previous_school_slc" not in student_cols:
+            conn.execute("ALTER TABLE students ADD COLUMN previous_school_slc TEXT;")
+
+        # 2. Update fee_heads table
+        cur.execute("PRAGMA table_info(fee_heads);")
+        fee_head_cols = {row[1] for row in cur.fetchall()}
+        if "default_amount" not in fee_head_cols:
+            conn.execute("ALTER TABLE fee_heads ADD COLUMN default_amount TEXT DEFAULT '0.00';")
+        if "is_active" not in fee_head_cols:
+            conn.execute("ALTER TABLE fee_heads ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1;")
+
+        # 3. Create school_profiles table
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS school_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            urdu_name TEXT,
+            campus_name TEXT NOT NULL DEFAULT 'Main Campus',
+            registration_code TEXT,
+            phone TEXT NOT NULL,
+            whatsapp TEXT,
+            email TEXT,
+            address TEXT,
+            logo_path TEXT,
+            created_at TEXT NOT NULL DEFAULT (DATETIME('now')),
+            updated_at TEXT NOT NULL DEFAULT (DATETIME('now'))
+        );
+        """)
+
+    set_schema_version(conn, 5)
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: migration_v1_initial_schema,
     2: migration_v2_attendance_schema,
     3: migration_v3_exam_schema,
     4: migration_v4_punjab_admission_spec,
+    5: migration_v5_school_profile_and_dynamic_fees,
 }
 
 
@@ -393,46 +441,32 @@ def migrate_to_latest(conn: sqlite3.Connection) -> int:
 
 def seed_default_academic_data(conn: sqlite3.Connection) -> None:
     """
-    Ensures an active academic session ('2026-2027 Academic Session'), baseline class
-    group ('Class 1 (Section A)' at PKR 3,500.00), and standard fee heads exist.
-    Prevents empty-state dropdown blockers during student admission on fresh zero-state installs.
+    Seeds the standard regional catalog of fee heads with realistic defaults
+    (Tuition, Admission, Prospectus, Security Deposit, Arrears, Paper Fund, Generator Fuel, Guard Fund).
+    Does NOT seed mock academic sessions or mock classes into production databases,
+    preserving zero-state database cleanliness for the First-Time Setup Mother Form.
     """
     with conn:
         cur = conn.cursor()
-        # 1. Academic Session
-        cur.execute("SELECT id FROM academic_sessions WHERE is_active = 1 LIMIT 1;")
-        row = cur.fetchone()
-        if not row:
-            cur.execute("""
-                INSERT OR IGNORE INTO academic_sessions (name, start_date, end_date, is_active)
-                VALUES ('2026-2027 Academic Session', '2026-04-01', '2027-03-31', 1);
-            """)
-            cur.execute("SELECT id FROM academic_sessions WHERE name = '2026-2027 Academic Session';")
-            row = cur.fetchone()
-
-        session_id = row[0] if row else 1
-
-        # 2. Baseline Class Group
-        cur.execute("SELECT COUNT(*) FROM class_groups;")
-        if cur.fetchone()[0] == 0:
-            cur.execute("""
-                INSERT OR IGNORE INTO class_groups (session_id, name, section_or_batch, group_type, monthly_tuition_fee)
-                VALUES (?, 'Class 1', 'Section A', 'SchoolClass', '3500.00');
-            """, (session_id,))
-
-        # 3. Standard Fee Heads
         standard_heads = [
-            ("Tuition Fee", "ٹیوشن فیس", 1),
-            ("Admission Fee", "داخلہ فیس", 0),
-            ("Registration / Prospectus", "رجسٹریشن و پراسپیکٹس", 0),
-            ("Security Deposit", "سیکیورٹی ڈپازٹ", 0),
-            ("Previous Arrears", "سابقہ واجبات", 1),
-            ("Examination Fee", "امتحانی فیس", 0),
-            ("Computer Lab Fee", "کمپیوٹر لیب فیس", 1),
-            ("Generator / Utility Charges", "جنریٹر و یوٹیلٹی چارجز", 1),
+            ("Tuition Fee", "ٹیوشن فیس", 1, "3500.00"),
+            ("Admission Fee", "داخلہ فیس", 0, "5000.00"),
+            ("Registration / Prospectus", "رجسٹریشن و پراسپیکٹس", 0, "1000.00"),
+            ("Security Deposit", "سیکیورٹی ڈپازٹ", 0, "3000.00"),
+            ("Previous Arrears", "سابقہ واجبات", 1, "0.00"),
+            ("Generator / Utility Charges", "جنریٹر و یوٹیلٹی چارجز", 1, "500.00"),
+            ("Generator & Fuel Surcharge", "جنریٹر و ایندھن چارجز", 1, "500.00"),
+            ("Stationery & Exam Paper Fund", "سٹیشنری و امتحانی فنڈ", 1, "500.00"),
+            ("Campus Security Guard Fund", "سیکیورٹی گارڈ فنڈ", 1, "300.00"),
+            ("Computer Lab Fee", "کمپیوٹر لیب فیس", 1, "500.00"),
+            ("Examination Fee", "امتحانی فیس", 0, "1500.00"),
         ]
-        for h_name, h_urdu, is_rec in standard_heads:
+        for h_name, h_urdu, is_rec, def_amt in standard_heads:
             cur.execute("""
-                INSERT OR IGNORE INTO fee_heads (name, urdu_name, is_recurring)
-                VALUES (?, ?, ?);
-            """, (h_name, h_urdu, is_rec))
+                INSERT OR IGNORE INTO fee_heads (name, urdu_name, is_recurring, default_amount, is_active)
+                VALUES (?, ?, ?, ?, 1);
+            """, (h_name, h_urdu, is_rec, def_amt))
+            cur.execute("""
+                UPDATE fee_heads SET default_amount = ?, is_active = 1
+                WHERE name = ? AND (default_amount IS NULL OR default_amount = '0.00');
+            """, (def_amt, h_name))

@@ -43,11 +43,70 @@ class SettingsView(BaseView):
         self.content_scroll = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self.content_scroll.pack(fill="both", expand=True, padx=16, pady=(0, 16))
 
-        # 3. System Diagnostics & Active Database Engine Health Card
+        # 3. Institutional Profile & Mother Form Card
+        self._build_institutional_profile_card(self.content_scroll)
+
+        # 4. System Diagnostics & Active Database Engine Health Card
         self._build_system_health_card(self.content_scroll)
 
-        # 4. 3-Tier Automated Backup Management Card
+        # 5. 3-Tier Automated Backup Management Card
         self._build_backup_card(self.content_scroll)
+
+    def _build_institutional_profile_card(self, parent) -> None:
+        """Renders institutional profile inspection and Mother Form launcher card."""
+        card = ctk.CTkFrame(parent, fg_color=self.colors["bg_card"], corner_radius=8)
+        card.pack(fill="x", pady=(0, 16))
+
+        top_bar = ctk.CTkFrame(card, fg_color="transparent")
+        top_bar.pack(fill="x", padx=16, pady=(12, 6))
+
+        ctk.CTkLabel(
+            top_bar,
+            text="🏫 Institutional Profile & Academic Setup (Mother Form)",
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color=self.colors["text_primary"]
+        ).pack(side="left")
+
+        btn_open_profile = ctk.CTkButton(
+            top_bar,
+            text="⚙️ Open School Profile & Setup Wizard",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            fg_color=self.colors["brand_primary"],
+            hover_color=self.colors["brand_accent"],
+            command=self._open_school_profile_modal
+        )
+        btn_open_profile.pack(side="right")
+
+        ctk.CTkLabel(
+            card,
+            text="Manage institutional branding, official contacts, academic calendar, active grade levels, and regional surcharge catalog.",
+            font=ctk.CTkFont(size=11),
+            text_color=self.colors["text_secondary"]
+        ).pack(anchor="w", padx=16, pady=(0, 8))
+
+        # Profile details grid
+        info_frame = ctk.CTkFrame(card, fg_color=self.colors["bg_app"], corner_radius=6)
+        info_frame.pack(fill="x", padx=16, pady=(0, 12))
+
+        for col in range(2):
+            info_frame.grid_columnconfigure(col, weight=1)
+
+        self.school_name_info_lbl = ctk.CTkLabel(info_frame, text="School: Not Configured", anchor="w", font=ctk.CTkFont(size=12, weight="bold"))
+        self.school_name_info_lbl.grid(row=0, column=0, padx=12, pady=6, sticky="w")
+
+        self.school_session_info_lbl = ctk.CTkLabel(info_frame, text="Active Session: None", anchor="w", font=ctk.CTkFont(size=12))
+        self.school_session_info_lbl.grid(row=0, column=1, padx=12, pady=6, sticky="w")
+
+        self.school_contact_info_lbl = ctk.CTkLabel(info_frame, text="Contact: N/A", anchor="w", font=ctk.CTkFont(size=12))
+        self.school_contact_info_lbl.grid(row=1, column=0, padx=12, pady=6, sticky="w")
+
+        self.school_classes_info_lbl = ctk.CTkLabel(info_frame, text="Registered Classes: 0", anchor="w", font=ctk.CTkFont(size=12))
+        self.school_classes_info_lbl.grid(row=1, column=1, padx=12, pady=6, sticky="w")
+
+    def _open_school_profile_modal(self) -> None:
+        """Opens SchoolProfileModal and refreshes settings view on save."""
+        from ui.school_profile_modal import SchoolProfileModal
+        SchoolProfileModal(self, db_conn=self.db_conn, on_configured=self.refresh_data)
 
     def _build_system_health_card(self, parent) -> None:
         """Renders live system diagnostics, database engine status, and 1-click auto-repair."""
@@ -204,7 +263,7 @@ class SettingsView(BaseView):
             sz_kb = os.path.getsize(db_path) / 1024.0
             self.db_file_info_label.configure(text=f"Database File: {os.path.basename(db_path)} ({sz_kb:.1f} KB)")
         else:
-            self.db_file_info_label.configure(text=f"Database File: In-Memory / Not Stored")
+            self.db_file_info_label.configure(text="Database File: In-Memory / Not Stored")
 
         # Table Row Count Probes
         try:
@@ -234,6 +293,36 @@ class SettingsView(BaseView):
             self.probe_exams_label.configure(text=f"Operational ({c} exams)", text_color=self.colors["status_paid"])
         except Exception:
             self.probe_exams_label.configure(text="UNINITIALIZED (Table Missing)", text_color=self.colors["status_unpaid"])
+
+        # Refresh Institutional Profile Information
+        if self.db_conn and hasattr(self, "school_name_info_lbl"):
+            try:
+                from services.school_service import get_school_profile
+                prof = get_school_profile(self.db_conn)
+                if prof:
+                    s_name = prof.get("school_name", "Not Configured")
+                    c_name = f" ({prof['campus_name']})" if prof.get("campus_name") else ""
+                    self.school_name_info_lbl.configure(text=f"School: {s_name}{c_name}")
+                    contact_str = prof.get("contact_number") or "N/A"
+                    email_str = f" | {prof['email']}" if prof.get("email") else ""
+                    self.school_contact_info_lbl.configure(text=f"Contact: {contact_str}{email_str}")
+                else:
+                    self.school_name_info_lbl.configure(text="School: Not Configured (Setup Required)")
+                    self.school_contact_info_lbl.configure(text="Contact: N/A")
+
+                cur.execute("SELECT name FROM academic_sessions WHERE is_active = 1 LIMIT 1;")
+                sess_row = cur.fetchone()
+                if sess_row:
+                    s_name = sess_row[0] if isinstance(sess_row, (tuple, list)) else sess_row["name"]
+                    self.school_session_info_lbl.configure(text=f"Active Session: {s_name}")
+                else:
+                    self.school_session_info_lbl.configure(text="Active Session: None")
+
+                cur.execute("SELECT COUNT(*) FROM class_groups;")
+                cl_count = cur.fetchone()[0]
+                self.school_classes_info_lbl.configure(text=f"Registered Classes: {cl_count}")
+            except Exception:
+                pass
 
     def on_show(self, **kwargs) -> None:
         """Refreshes health metrics and connection state when tab is opened."""
