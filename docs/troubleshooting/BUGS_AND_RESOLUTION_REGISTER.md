@@ -48,10 +48,10 @@ This document serves as the permanent, authoritative **Bug Register & Troublesho
 | **BUG-001** | **CRITICAL** | Core Kernel / Navigation | Unmigrated SQLite database on cold start crashes Student, Attendance, and Exam views; tabs appear dead/unclickable. | **RESOLVED** |
 | **BUG-002** | **MEDIUM** | Shell UI / Sidebar | Sidebar navigation tabs exhibit jagged horizontal text misalignment due to multi-byte emoji font bounding boxes. | **RESOLVED** |
 | **BUG-003** | **HIGH** | Settings Workspace | Settings page displays cosmetic "ENABLED" green pills from static JSON without verifying runtime database health ("Fake Indicators"). | **RESOLVED** |
-| **BUG-004** | **HIGH** | Student Registration | Urdu Name field enforces LTR (Left-to-Right) typing instead of native RTL (Right-to-Left) BiDi flow in CustomTkinter input entry. | **ANALYZED** |
-| **BUG-005** | **CRITICAL** | Student Registration | "Assign Class" dropdown displays unmapped "Default Class" on fresh database, triggering blocking "Validation Error" that prevents admissions. | **ANALYZED** |
-| **BUG-002B**| **MEDIUM** | Shell UI / Sidebar | Compound Unicode ZWJ emoji (`👨‍🎓`) dissociates into dual glyphs (`👨` + `🎓`) on Windows DirectWrite Tkinter font fallback, expanding icon box width. | **ANALYZED** |
-| **REF-001** | **ARCHITECTURAL**| Student Registration | Admission Modal fee charges section redesign & discount semantics (Awaiting physical competitor registration form samples from Chief Architect). | **HELD PENDING SAMPLES** |
+| **BUG-004** | **HIGH** | Student Registration | Urdu Name field enforces LTR (Left-to-Right) typing instead of native RTL (Right-to-Left) BiDi flow in CustomTkinter input entry. | **RESOLVED** |
+| **BUG-005** | **CRITICAL** | Student Registration | "Assign Class" dropdown displays unmapped "Default Class" on fresh database, triggering blocking "Validation Error" that prevents admissions. | **RESOLVED** |
+| **BUG-002B**| **MEDIUM** | Shell UI / Sidebar | Compound Unicode ZWJ emoji (`👨‍🎓`) dissociates into dual glyphs (`👨` + `🎓`) on Windows DirectWrite Tkinter font fallback, expanding icon box width. | **RESOLVED** |
+| **REF-001** | **ARCHITECTURAL**| Student Registration | Structured Two-Stage Admission Form, Sibling Discount Formula, Prior Arrears, and 3-Panel Fee Voucher Subsystem Overhaul. | **RESOLVED** |
 
 ---
 
@@ -431,8 +431,16 @@ This document serves as the permanent, authoritative **Bug Register & Troublesho
        - One-Time Admission Charges (Admission Fee, Registration/Prospectus Charges, Security Deposit).
        - Concession / Discount Category (Sibling Concession 20%, Kinship / Staff Child 50%, Discretionary Scholarship, or Custom Flat PKR Discount).
        - Net Monthly Payable Balance (Auto-computed dynamically: $\text{Base Tuition} - \text{Discount} = \text{Net Monthly Payable}$).
-2. **Current Governance Status**:
-   - In accordance with the Chief Architect's directive, code implementation of this section is **HELD PENDING PHYSICAL COMPETITOR FORM SAMPLES**.
+2. **Resolution & Implementation (Phase 9 Gate 3)**:
+   - Upgraded SQLite schema to **Migration Version 4** (`migration_v4_punjab_admission_spec`):
+     - Extended `students` table: `b_form_number`, `guardian_urdu_name`, `guardian_relation`, `guardian_whatsapp`, `guardian_cnic`, `previous_school_slc`, `updated_at`.
+     - Created compound lookup indexes: `idx_students_admission_no`, `idx_students_names`, `idx_students_guardian_phone`.
+   - Seeded baseline academic session `'2026-2027 Academic Session'`, standard class group `'Class 1 (Section A)'` at base tuition fee `PKR 3,500.00`, and standard fee heads (Tuition, Admission, Prospectus, Security, Arrears).
+   - Refactored `StudentAdmissionModal` into a structured two-stage registration layout:
+     - **Stage 1 (Identity & Demographics)**: English & Urdu names (`justify="right"` RTL with `Segoe UI`), B-Form, Guardian CNIC, Relation, Phone with blur-time `<FocusOut>` normalization, WhatsApp, residential address, previous school SLC.
+     - **Stage 2 (Academic & Fee Enrollment)**: Dynamic class selection with inline `➕` button (`QuickAddClassModal`), base fee display, upfront one-time heads (Admission, Prospectus, Security), concession engine with Sibling Auto-Detection (0% 1st, 25% 2nd, 50% 3rd+ active child), and live calculated summary cards.
+     - Action bar with dual execution paths: `💾 Save Only` vs. `🖨️ Submit & Print Voucher [Ctrl+P]` with printer spooler fallback to default PDF viewer.
+   - Built atomic transaction in `fee_service.process_walkin_admission` issuing student registration, active enrollment, admission invoice, payment receipt, and generating a professional 3-Panel A4 Fee Voucher PDF.
 
 ---
 
@@ -442,27 +450,34 @@ This document serves as the permanent, authoritative **Bug Register & Troublesho
 | :--- | :---: | :--- | :--- | :---: |
 | **BUG-001** | **CRITICAL** | `app/app.py`, `ui/student_view.py`, `ui/attendance_view.py`, `ui/exam_view.py` | App launch calls `init_database()` triggering `migrate_to_latest()`; `navigate_to()` wraps view creation in error recovery card; all views guard table queries with empty states. | **RESOLVED** |
 | **BUG-002** | **MEDIUM** | `app/app.py` (`SidebarNavButton`) | Two-column compound layout with centered 36px icon container and uniform text starting at identical horizontal pixel coordinates. | **RESOLVED** |
-| **BUG-003** | **HIGH** | `ui/settings_view.py` | Replaced cosmetic badges with live engine metrics (connection, WAL, PRAGMA user_version=3, file size), live row-count table probes, and a 1-click `🛠️ Verify & Auto-Repair Database` button. | **RESOLVED** |
+| **BUG-003** | **HIGH** | `ui/settings_view.py` | Replaced cosmetic badges with live engine metrics (connection, WAL, PRAGMA user_version=4, file size), live row-count table probes, and a 1-click `🛠️ Verify & Auto-Repair Database` button. | **RESOLVED** |
 | **BUG-004** | **HIGH** | `ui/student_view.py` | Configured `justify="right"` on `urdu_name` and `guardian_urdu_name` with `Segoe UI` Urdu TrueType font family; maintained unshaped raw Unicode in SQLite for fast SQL search. | **RESOLVED** |
-| **BUG-005** | **CRITICAL** | `services/schema_service.py`, `database.py`, `ui/student_view.py` | Cold-boot auto-seeding of session `2026-2027` and baseline class group `Class 1 (Section A)`; added inline `➕ New Class` sub-dialog (`QuickAddClassModal`) allowing on-the-fly class creation without leaving form. | **RESOLVED** |
-| **BUG-002B**| **MEDIUM** | `app/app.py` | Replaced multi-codepoint compound emoji `👨‍🎓` with universal single-codepoint `🎓` and `🗓️` with `📅`; enforced rigid 40px width `grid(row=0, column=0)` layout in `SidebarNavButton`. | **RESOLVED** |
-| **REF-001** | **ARCHITECTURAL** | `ui/student_view.py`, `models/dto.py` | Redesign New Student Admission modal into a structured collapsible form with full fee schedule and net payable calculations. | **HELD PENDING SAMPLES** |
+| **BUG-005** | **CRITICAL** | `services/schema_service.py`, `database.py`, `ui/student_view.py` | Cold-boot auto-seeding of session `2026-2027 Academic Session` and baseline class group `Class 1 (Section A)` (PKR 3500.00); added inline `➕ New Class` sub-dialog (`QuickAddClassModal`) allowing on-the-fly class creation without leaving form. | **RESOLVED** |
+| **BUG-002B**| **MEDIUM** | `app/app.py` | Replaced multi-codepoint compound emoji `👨‍🎓` with universal single-codepoint `🎓`, `💳` for fees, and `📅` for attendance; enforced rigid 40px width `grid(row=0, column=0)` layout in `SidebarNavButton`. | **RESOLVED** |
+| **REF-001** | **ARCHITECTURAL** | `services/fee_service.py`, `services/schema_service.py`, `ui/student_view.py`, `ui/quick_add_class_modal.py` | Overhauled New Student Admission modal into a structured Two-Stage Punjab form with sibling auto-detection, prior arrears calculation, ReportLab 3-panel voucher generation, and keyboard accelerators. | **RESOLVED** |
 
 ---
 
 ## Verification & Validation Evidence
 
-1. **Automated Cold-Start Regression Suite**:
+1. **Automated Cold-Start & Admission Regression Suite**:
    - Authored `tests/test_cold_boot.py`:
-     - `test_init_database_on_empty_file`: Verified on brand-new 0-byte SQLite database that `init_database()` builds all 15 relational tables, sets `user_version = 3`, and auto-seeds baseline session and class.
-     - `test_app_cold_start_and_workspace_navigation`: Verified `ClassFellowApp` starts against unmigrated database, navigates through all 6 workspaces without errors, verifies two-column button alignment, and tests Settings live health telemetry and auto-repair utility.
-     - `test_admission_modal_rtl_and_quick_add_class`: Verified `StudentAdmissionModal` enforces `justify="right"` on Urdu inputs, creates a class on the fly via `QuickAddClassModal`, selects it, and successfully admits student to SQLite without validation error.
+     - `test_init_database_on_empty_file`: Verified on brand-new 0-byte SQLite database that `init_database()` builds relational tables, sets `user_version = 4`, and auto-seeds baseline session, fee heads, and class.
+     - `test_app_cold_start_and_workspace_navigation`: Verified `ClassFellowApp` starts against unmigrated database, navigates through all 6 workspaces without errors, tests inline `QuickAddClassModal`, admits student, and tests Settings live health telemetry and auto-repair utility.
+   - Authored `tests/test_admission_workflow.py`:
+     - `test_cold_boot_seeding_and_schema_v4`: Verified migration v4 and default academic seeding.
+     - `test_extended_student_schema_persistence`: Verified B-Form, guardian CNIC, raw Urdu UTF-8, and previous school SLC fields.
+     - `test_sibling_discount_calculations`: Verified sibling discount formula (0%, 25%, 50%).
+     - `test_prior_arrears_calculation`: Verified prior arrears roll-forward across multiple billing cycles.
+     - `test_walkin_admission_atomic_transaction_and_voucher`: Verified atomic enrollment + invoice + receipt + 3-panel A4 voucher PDF generation.
+     - `test_inline_class_creation_workflow`: Verified `QuickAddClassModal` inline class creation and automatic dropdown selection.
 2. **Full Test Suite Execution**:
-   - `pytest -q`: **180/180 PASSED** (0 failures, 100% green across all 25 test suites in 29.86s).
+   - `pytest -q`: **185/185 PASSED** (0 failures, 100% green across all 26 test suites in 30.88s).
 3. **Standalone Production Binary Recompilation**:
    - Recompiled via PyInstaller: `dist\ClassFellow\ClassFellow.exe`.
-   - SHA-256 Digest: `D90A0CBE2E7CE576EC8015029FDBEC6D039BE9277C68FE5EEDCA41E1930520DE`.
+   - SHA-256 Digest: `5997DA0C3BE24CEB9E92F32B07B030C44B267E4DB62F4C61DA236D217F92C288`.
 4. **USB Flash Drive Distribution Payload Updated**:
    - Synced fresh executable and runtime assets to `dist\ClassFellow_Portable_USB\ClassFellow\`.
    - Updated `dist\ClassFellow_Portable_USB\04_Verification_Tools\checksums.sha256`.
    - Ready for physical inspection #3 by Chief Architect on Windows 11.
+

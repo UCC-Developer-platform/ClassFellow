@@ -295,6 +295,8 @@ def seed_demo_database(db_path: str, verbose: bool = True) -> dict:
     # 1. Academic Session
     if verbose:
         print("[1/7] Creating Academic Session 2026-2027...")
+    # Clean up zero-state baseline session placeholder if present before seeding
+    conn.execute("UPDATE academic_sessions SET name = '2026-2027' WHERE name = '2026-2027 Academic Session';")
     session_id = student_svc.create_academic_session(
         name="2026-2027",
         start_date="2026-04-01",

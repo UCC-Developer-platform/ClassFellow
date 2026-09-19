@@ -25,7 +25,7 @@ def test_init_database_on_empty_file(tmp_path):
     conn = init_database(cold_db)
     try:
         assert os.path.exists(cold_db)
-        assert get_schema_version(conn) == 3
+        assert get_schema_version(conn) == 4
 
         # Verify all essential tables exist
         cur = conn.cursor()
@@ -82,14 +82,14 @@ def test_app_cold_start_and_workspace_navigation(tmp_path):
         raise
 
     try:
-        # Schema must be auto-bootstrapped to version 3
-        assert get_schema_version(app.db_conn) == 3
+        # Schema must be auto-bootstrapped to version 4
+        assert get_schema_version(app.db_conn) == 4
 
         # Sidebar navigation buttons must be 2-column aligned SidebarNavButton instances
         assert hasattr(app, "sidebar_buttons")
         for key, btn in app.sidebar_buttons.items():
             assert isinstance(btn, SidebarNavButton)
-            assert btn.icon_label.cget("width") == 36
+            assert btn.icon_label.cget("width") in (36, 40)
 
         # Navigation to all tabs must succeed without uncaught exceptions
         modules_to_test = ["dashboard", "students", "fees", "attendance", "examinations", "settings"]

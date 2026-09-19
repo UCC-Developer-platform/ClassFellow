@@ -6,13 +6,14 @@ collection, payment ledger with ON DELETE RESTRICT protection, two-tier due
 dates, and fact-derived financial balance calculations as specified in CF-SRS-03.
 """
 
+import os
 import re
 import datetime
 import sqlite3
 from decimal import Decimal
 from typing import Optional, Any
-from database import transaction
-from models import FeeHeadDTO, FeeInvoiceDTO, FeeInvoiceItemDTO, PaymentDTO
+from database import transaction, DEFAULT_DB_PATH
+from models import StudentDTO
 
 
 def generate_next_receipt_number(conn: sqlite3.Connection, year: Optional[int] = None) -> str:
@@ -573,3 +574,266 @@ class FeeService:
 
         with transaction(self.conn):
             cursor.execute("DELETE FROM fee_invoices WHERE id = ?;", (invoice_id,))
+
+    def calculate_sibling_discount(
+        self,
+        guardian_phone: str,
+        base_tuition: Decimal,
+        student_id: Optional[int] = None
+    ) -> Decimal:
+        """Wrapper calling calculate_sibling_discount with connection instance."""
+        return calculate_sibling_discount(self.conn, guardian_phone, base_tuition, student_id)
+
+    def get_prior_arrears(
+        self,
+        enrollment_id: int,
+        current_month_year: str
+    ) -> Decimal:
+        """Wrapper calling get_prior_arrears with connection instance."""
+        return get_prior_arrears(self.conn, enrollment_id, current_month_year)
+
+    def process_walkin_admission(self, **kwargs) -> str:
+        """Wrapper calling process_walkin_admission with connection instance."""
+        return process_walkin_admission(self.conn, **kwargs)
+
+
+def calculate_sibling_discount(
+    conn: sqlite3.Connection,
+    guardian_phone: str,
+    base_tuition: Decimal,
+    student_id: Optional[int] = None
+) -> Decimal:
+    """
+    Calculates sibling concession discount based on child enrollment order.
+    Queries active enrollments matching normalized guardian_phone ordered by enrollment_date ASC, s.id ASC.
+    Discount formula:
+      - 1st child: 0% discount
+      - 2nd child: 25% discount
+      - 3rd+ child: 50% discount
+    """
+    if not guardian_phone or not str(guardian_phone).strip():
+        return Decimal("0.00")
+
+    try:
+        from services.student_service import normalize_pakistan_phone
+        norm_phone = normalize_pakistan_phone(guardian_phone)
+    except Exception:
+        norm_phone = str(guardian_phone).strip()
+
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT s.id, MIN(e.enrollment_date) AS first_enrolled
+        FROM students s
+        JOIN enrollments e ON s.id = e.student_id
+        WHERE (s.guardian_phone = ? OR s.guardian_phone = ?) AND e.status = 'Active'
+        GROUP BY s.id
+        ORDER BY first_enrolled ASC, s.id ASC;
+        """,
+        (norm_phone, str(guardian_phone).strip())
+    )
+    rows = cur.fetchall()
+    sibling_ids = [r[0] if isinstance(r, (tuple, list)) else r["id"] for r in rows]
+
+    if student_id is not None and student_id in sibling_ids:
+        order_index = sibling_ids.index(student_id)
+    else:
+        order_index = len(sibling_ids)
+
+    if order_index == 0:
+        rate = Decimal("0.00")
+    elif order_index == 1:
+        rate = Decimal("0.25")
+    else:
+        rate = Decimal("0.50")
+
+    return (Decimal(str(base_tuition)) * rate).quantize(Decimal("0.01"))
+
+
+def get_prior_arrears(
+    conn: sqlite3.Connection,
+    enrollment_id: int,
+    current_month_year: str
+) -> Decimal:
+    """
+    Sums unpaid balances from all prior billing cycles (month_year < current_month_year)
+    for a given enrollment.
+    """
+    cur = conn.cursor()
+    cur.execute(
+        """
+        SELECT 
+            fi.id,
+            fi.net_due,
+            COALESCE((
+                SELECT SUM(CAST(p.amount AS NUMERIC))
+                FROM payments p
+                WHERE p.invoice_id = fi.id AND p.status = 'Issued'
+            ), 0.0) AS total_paid
+        FROM fee_invoices fi
+        WHERE fi.enrollment_id = ? AND fi.month_year < ?
+        ORDER BY fi.month_year ASC;
+        """,
+        (enrollment_id, current_month_year)
+    )
+    rows = cur.fetchall()
+    total_arrears = Decimal("0.00")
+    for r in rows:
+        net_due = Decimal(str(r["net_due"] if isinstance(r, sqlite3.Row) else r[1]))
+        total_paid = Decimal(str(r["total_paid"] if isinstance(r, sqlite3.Row) else r[2]))
+        unpaid = max(Decimal("0.00"), net_due - total_paid)
+        total_arrears += unpaid
+
+    return total_arrears.quantize(Decimal("0.01"))
+
+
+def process_walkin_admission(
+    conn: sqlite3.Connection,
+    student_data: StudentDTO,
+    class_group_id: int,
+    session_id: Optional[int] = None,
+    roll_number: Optional[str] = None,
+    enrollment_date: Optional[str] = None,
+    concession_discount: Decimal = Decimal("0.00"),
+    month_year: Optional[str] = None,
+    issue_date: Optional[str] = None,
+    due_date: Optional[str] = None,
+    valid_until: Optional[str] = None,
+    admission_fee: Decimal = Decimal("0.00"),
+    prospectus_fee: Decimal = Decimal("0.00"),
+    security_deposit: Decimal = Decimal("0.00"),
+    prior_arrears: Decimal = Decimal("0.00"),
+    voucher_output_dir: Optional[str] = None,
+    generate_voucher: bool = True,
+    institution_name: str = "CLASSFELLOW HIGH SCHOOL & ACADEMY"
+) -> str:
+    """
+    Executes atomic walk-in admission transaction:
+      1. Registers student identity & guardian details in students table.
+      2. Enrolls student in target class group & academic session.
+      3. Generates itemized initial admission fee invoice (Tuition, Admission Fee,
+         Registration/Prospectus, Security Deposit, Prior Arrears minus Concession).
+      4. Renders a print-ready 3-panel A4 fee voucher PDF via ReportLab.
+
+    Returns:
+        The filesystem path of the generated 3-panel voucher PDF.
+    """
+    from services.student_service import StudentService
+    from app.reports.fee_voucher_generator import generate_fee_voucher_pdf
+
+    if not enrollment_date:
+        enrollment_date = datetime.date.today().isoformat()
+    if not month_year:
+        month_year = datetime.date.today().strftime("%Y-%m")
+    if not issue_date:
+        issue_date = datetime.date.today().isoformat()
+    if not due_date:
+        due_date = f"{month_year}-10"
+    if not valid_until:
+        valid_until = f"{month_year}-20"
+
+    cursor = conn.cursor()
+
+    # Resolve active session if not explicitly provided
+    if session_id is None:
+        cursor.execute("SELECT session_id, monthly_tuition_fee FROM class_groups WHERE id = ?;", (class_group_id,))
+        cg_row = cursor.fetchone()
+        if not cg_row:
+            raise ValueError(f"Class group id={class_group_id} does not exist.")
+        session_id = cg_row["session_id"] if isinstance(cg_row, sqlite3.Row) else cg_row[0]
+        base_tuition = Decimal(str(cg_row["monthly_tuition_fee"] if isinstance(cg_row, sqlite3.Row) else cg_row[1]))
+    else:
+        cursor.execute("SELECT monthly_tuition_fee FROM class_groups WHERE id = ?;", (class_group_id,))
+        cg_row = cursor.fetchone()
+        if not cg_row:
+            raise ValueError(f"Class group id={class_group_id} does not exist.")
+        base_tuition = Decimal(str(cg_row["monthly_tuition_fee"] if isinstance(cg_row, sqlite3.Row) else cg_row[0]))
+
+    invoice_id = None
+    adm_number = None
+
+    with transaction(conn):
+        student_svc = StudentService(conn)
+        student_id, enrollment_id = student_svc.register_student(
+            student_data=student_data,
+            class_group_id=class_group_id,
+            session_id=session_id,
+            roll_number=roll_number,
+            custom_discount_amount=concession_discount,
+            enrollment_date=enrollment_date
+        )
+
+        st_rec = student_svc.get_student_by_id(student_id)
+        adm_number = st_rec.get("admission_number", f"ID{student_id}") if st_rec else f"ID{student_id}"
+
+        def _get_head_id(name: str, urdu: str, rec: int) -> int:
+            cursor.execute("SELECT id FROM fee_heads WHERE name = ? LIMIT 1;", (name,))
+            h_row = cursor.fetchone()
+            if h_row:
+                return h_row[0] if isinstance(h_row, (tuple, list)) else h_row["id"]
+            cursor.execute("INSERT INTO fee_heads (name, urdu_name, is_recurring) VALUES (?, ?, ?);", (name, urdu, rec))
+            return cursor.lastrowid
+
+        items_to_create = [
+            ("Tuition Fee", base_tuition, "ٹیوشن فیس", 1),
+        ]
+        if admission_fee > Decimal("0.00"):
+            items_to_create.append(("Admission Fee", admission_fee, "داخلہ فیس", 0))
+        if prospectus_fee > Decimal("0.00"):
+            items_to_create.append(("Registration / Prospectus", prospectus_fee, "رجسٹریشن و پراسپیکٹس", 0))
+        if security_deposit > Decimal("0.00"):
+            items_to_create.append(("Security Deposit", security_deposit, "سیکیورٹی ڈپازٹ", 0))
+        if prior_arrears > Decimal("0.00"):
+            items_to_create.append(("Previous Arrears", prior_arrears, "سابقہ واجبات", 1))
+
+        total_payable = sum(amt for _, amt, _, _ in items_to_create)
+        discount_amount = concession_discount
+        net_due = max(Decimal("0.00"), total_payable - discount_amount)
+
+        cursor.execute(
+            """
+            INSERT INTO fee_invoices (
+                enrollment_id, session_id, month_year, issue_date, due_date,
+                valid_until, late_fee_surcharge, total_payable, discount_amount, net_due
+            ) VALUES (?, ?, ?, ?, ?, ?, '200.00', ?, ?, ?);
+            """,
+            (
+                enrollment_id,
+                session_id,
+                month_year,
+                issue_date,
+                due_date,
+                valid_until,
+                str(total_payable),
+                str(discount_amount),
+                str(net_due)
+            )
+        )
+        invoice_id = cursor.lastrowid
+
+        for head_name, amt, head_urdu, is_rec in items_to_create:
+            hid = _get_head_id(head_name, head_urdu, is_rec)
+            cursor.execute(
+                "INSERT INTO fee_invoice_items (invoice_id, fee_head_id, amount) VALUES (?, ?, ?);",
+                (invoice_id, hid, str(amt))
+            )
+
+    if not generate_voucher:
+        return ""
+
+    fee_svc = FeeService(conn)
+    invoice_data = fee_svc.get_invoice_details(invoice_id)
+    if not invoice_data:
+        raise RuntimeError(f"Failed to fetch details for invoice {invoice_id}")
+
+    if voucher_output_dir:
+        out_dir = voucher_output_dir
+    else:
+        out_dir = os.path.join(os.path.dirname(os.path.abspath(DEFAULT_DB_PATH)), "vouchers")
+    os.makedirs(out_dir, exist_ok=True)
+
+    safe_adm = re.sub(r"[^\w\-]", "_", str(adm_number))
+    pdf_path = os.path.join(out_dir, f"admission_voucher_{safe_adm}_{month_year}.pdf")
+    generate_fee_voucher_pdf(invoice_data, pdf_path, institution_name=institution_name)
+
+    return pdf_path

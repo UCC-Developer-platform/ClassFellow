@@ -48,6 +48,7 @@ class StudentDTO:
     guardian_cnic: Optional[str] = None
     residential_address: Optional[str] = None
     emergency_contact: Optional[str] = None
+    previous_school_slc: Optional[str] = None
     is_active: bool = True
 
 

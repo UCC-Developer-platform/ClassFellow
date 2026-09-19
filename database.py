@@ -27,8 +27,13 @@ def transaction(conn: sqlite3.Connection):
     """
     Context manager for atomic SQLite transactions under isolation_level=None.
     Issues 'BEGIN IMMEDIATE;' to acquire an immediate write lock and prevent concurrency races.
-    Commits on successful block completion, rolls back on any exception.
+    Supports nesting: nested transaction blocks participate in the active outer transaction.
+    Commits on successful outer block completion, rolls back on any exception.
     """
+    if conn.in_transaction:
+        yield conn
+        return
+
     conn.execute("BEGIN IMMEDIATE;")
     try:
         yield conn

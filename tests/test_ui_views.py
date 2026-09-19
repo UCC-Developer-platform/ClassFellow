@@ -39,7 +39,7 @@ def populated_ui_db(tmp_path):
     # 1. Academic Session
     conn.execute(
         "INSERT OR IGNORE INTO academic_sessions (name, start_date, end_date, is_active) "
-        "VALUES ('2026-2027', '2026-04-01', '2027-03-31', 1);"
+        "VALUES ('2026-2027 Academic Session', '2026-04-01', '2027-03-31', 1);"
     )
 
     # 2. Class Group

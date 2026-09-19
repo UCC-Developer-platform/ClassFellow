@@ -14,9 +14,15 @@ from tkinter import filedialog
 import customtkinter as ctk
 
 from models import StudentDTO
-from services.student_service import StudentService
+from services.student_service import (
+    StudentService,
+    normalize_pakistan_phone,
+    generate_next_admission_number
+)
+from services.fee_service import FeeService, calculate_sibling_discount
 from services.importer_service import StudentImporterService
 from ui.base_view import BaseView, BaseModal, THEME_COLORS
+from ui.quick_add_class_modal import QuickAddClassModal
 
 logger = logging.getLogger(__name__)
 
@@ -286,318 +292,697 @@ class StudentView(BaseView):
 # Modal Dialog: Quick Add Class Group (Inline Sub-Modal)
 # =============================================================================
 
-class QuickAddClassModal(BaseModal):
-    """
-    Lightweight modal dialog allowing clerks to create a new Class Group on the fly
-    without leaving or clearing the Student Admission form.
-    """
-    def __init__(self, parent_admission_modal: "StudentAdmissionModal"):
-        super().__init__(parent_admission_modal, title="➕ Quick Add Class Group", width=440, height=360)
-        self.admission_modal = parent_admission_modal
-        self._build_fields()
-
-    def _build_fields(self) -> None:
-        body = ctk.CTkFrame(self.card, fg_color="transparent")
-        body.pack(fill="both", expand=True, padx=16, pady=4)
-
-        # 1. Class Name
-        f1 = ctk.CTkFrame(body, fg_color="transparent")
-        f1.pack(fill="x", pady=4)
-        ctk.CTkLabel(f1, text="Class Name *:", width=130, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.name_entry = ctk.CTkEntry(f1, placeholder_text="e.g. Class 9, Prep", width=220)
-        self.name_entry.pack(side="left")
-
-        # 2. Section / Batch
-        f2 = ctk.CTkFrame(body, fg_color="transparent")
-        f2.pack(fill="x", pady=4)
-        ctk.CTkLabel(f2, text="Section / Batch *:", width=130, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.sec_entry = ctk.CTkEntry(f2, placeholder_text="e.g. Section A, Green", width=220)
-        self.sec_entry.pack(side="left")
-
-        # 3. Monthly Tuition Fee
-        f3 = ctk.CTkFrame(body, fg_color="transparent")
-        f3.pack(fill="x", pady=4)
-        ctk.CTkLabel(f3, text="Monthly Fee (PKR):", width=130, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.fee_entry = ctk.CTkEntry(f3, placeholder_text="e.g. 3500.00", width=220)
-        self.fee_entry.insert(0, "3000.00")
-        self.fee_entry.pack(side="left")
-
-        # 4. Group Type
-        f4 = ctk.CTkFrame(body, fg_color="transparent")
-        f4.pack(fill="x", pady=4)
-        ctk.CTkLabel(f4, text="Class Type:", width=130, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        self.type_var = ctk.StringVar(value="SchoolClass")
-        ctk.CTkOptionMenu(f4, values=["SchoolClass", "AcademyBatch"], variable=self.type_var, width=220).pack(side="left")
-
-        # Buttons
-        btn_box = ctk.CTkFrame(self.card, fg_color="transparent")
-        btn_box.pack(fill="x", padx=16, pady=(10, 14))
-
-        ctk.CTkButton(
-            btn_box, text="Cancel", width=90, fg_color=THEME_COLORS["border_color"],
-            hover_color="#334155", command=self.close
-        ).pack(side="right", padx=6)
-
-        ctk.CTkButton(
-            btn_box, text="Save & Select", width=120,
-            fg_color=THEME_COLORS["brand_primary"], hover_color=THEME_COLORS["brand_accent"],
-            font=ctk.CTkFont(size=12, weight="bold"),
-            command=self._save_class
-        ).pack(side="right", padx=6)
-
-    def _save_class(self) -> None:
-        name = self.name_entry.get().strip()
-        sec = self.sec_entry.get().strip()
-        fee_str = self.fee_entry.get().strip() or "0.00"
-        group_type = self.type_var.get()
-
-        if not name or not sec:
-            return
-
-        try:
-            fee = Decimal(fee_str)
-        except Exception:
-            fee = Decimal("0.00")
-
-        conn = self.admission_modal.parent_view.db_conn
-        if not conn:
-            return
-
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM academic_sessions WHERE is_active = 1 LIMIT 1;")
-        s_row = cur.fetchone()
-        if not s_row:
-            cur.execute("""
-                INSERT OR IGNORE INTO academic_sessions (name, start_date, end_date, is_active)
-                VALUES ('2026-2027', '2026-04-01', '2027-03-31', 1);
-            """)
-            cur.execute("SELECT id FROM academic_sessions WHERE name = '2026-2027';")
-            s_row = cur.fetchone()
-        session_id = s_row[0] if s_row else 1
-
-        try:
-            cur.execute("""
-                INSERT INTO class_groups (session_id, name, section_or_batch, group_type, monthly_tuition_fee)
-                VALUES (?, ?, ?, ?, ?);
-            """, (session_id, name, sec, group_type, str(fee)))
-            new_id = cur.lastrowid
-            display_name = f"{name} ({sec})"
-            self.admission_modal.on_class_created(new_id, display_name)
-            self.close()
-        except sqlite3.IntegrityError:
-            cur.execute("SELECT id FROM class_groups WHERE session_id = ? AND name = ? AND section_or_batch = ?;",
-                        (session_id, name, sec))
-            existing = cur.fetchone()
-            if existing:
-                display_name = f"{name} ({sec})"
-                self.admission_modal.on_class_created(existing[0], display_name)
-                self.close()
-
-    def close(self) -> None:
-        super().close()
-        try:
-            self.admission_modal.grab_set()
-            self.admission_modal.focus_force()
-        except Exception:
-            pass
+# =============================================================================
+def _clean_numeric_input(val: Any) -> str:
+    """Sanitizes text inputs to prevent syntax errors when user inserts over default values."""
+    s = str(val or "").strip()
+    if not s:
+        return "0.00"
+    if s.count(".") > 1 and s.endswith("0.00"):
+        s = s[:-4]
+    if s.count(".") > 1:
+        parts = s.split(".")
+        s = f"{parts[0]}.{parts[1]}"
+    return s
 
 
 class StudentAdmissionModal(BaseModal):
-    """Focus-trapped modal dialog for student registration."""
+    """
+    Structured two-stage modal dialog for Punjab school admissions:
+      Stage 1: Student Identity & Demographics (Bilingual English/Urdu RTL)
+      Stage 2: Academic Class Allocation & Financial Structure (Concessions, One-Time Heads)
+    Features dynamic net payable calculation and 3-panel A4 fee voucher PDF generation.
+    """
 
     def __init__(self, parent_view: StudentView):
         super().__init__(
             parent_view,
-            title="New Student Admission",
-            width=560,
-            height=620
+            title="🎓 New Student Admission & Enrollment (داخلہ فارم)",
+            width=700,
+            height=720
         )
         self.parent_view = parent_view
         self.student_service = parent_view.student_service
+        self.fee_service = FeeService(parent_view.db_conn) if parent_view.db_conn else None
+
+        self.class_groups_map: Dict[str, int] = {}
+        self.class_sessions_map: Dict[str, int] = {}
+        self.class_tuition_map: Dict[str, Decimal] = {}
 
         self._build_form()
+        self._setup_shortcuts()
+
+    def _setup_shortcuts(self) -> None:
+        """Configures keyboard accelerators and safe close unbinding."""
+        self.bind("<Escape>", lambda e: self.close())
+        try:
+            self.bind_all("<Control-p>", lambda e: self._on_submit_and_print())
+            self.bind_all("<Control-P>", lambda e: self._on_submit_and_print())
+        except Exception:
+            pass
+
+    def close(self) -> None:
+        """Safely unbinds global shortcuts before closing dialog."""
+        try:
+            self.unbind_all("<Control-p>")
+            self.unbind_all("<Control-P>")
+        except Exception:
+            pass
+        super().close()
 
     def _build_form(self) -> None:
-        """Builds registration input controls."""
+        """Builds two-stage registration layout inside a scrollable container."""
         form_scroll = ctk.CTkScrollableFrame(self.card, fg_color="transparent")
-        form_scroll.pack(fill="both", expand=True, padx=12, pady=4)
+        form_scroll.pack(fill="both", expand=True, padx=8, pady=(0, 4))
 
-        # 1. Names
-        self.first_name = self._add_entry(form_scroll, "First Name *:", "e.g. Muhammad")
-        self.last_name = self._add_entry(form_scroll, "Last Name:", "e.g. Ali")
-        self.urdu_name = self._add_entry(form_scroll, "Urdu Name:", "مثال: محمد علی", is_rtl=True)
+        # =====================================================================
+        # STAGE 1: Identity & Demographics (شناخت و کوائف)
+        # =====================================================================
+        stage1_card = ctk.CTkFrame(form_scroll, fg_color="#1E293B", corner_radius=8)
+        stage1_card.pack(fill="x", padx=4, pady=4)
 
-        # 2. Gender
-        gender_frame = ctk.CTkFrame(form_scroll, fg_color="transparent")
-        gender_frame.pack(fill="x", pady=4)
+        stage1_header = ctk.CTkFrame(stage1_card, fg_color="#0F172A", corner_radius=6, height=32)
+        stage1_header.pack(fill="x", padx=6, pady=6)
         ctk.CTkLabel(
-            gender_frame, text="Gender *:", width=140, anchor="w",
-            font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(side="left")
+            stage1_header,
+            text="📌 Stage 1: Identity & Demographics (شناخت و کوائف طالب علم)",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#38BDF8"
+        ).pack(side="left", padx=10, pady=4)
+
+        s1_body = ctk.CTkFrame(stage1_card, fg_color="transparent")
+        s1_body.pack(fill="x", padx=12, pady=(0, 10))
+
+        # Row 1: Admission No & Gender
+        r1 = ctk.CTkFrame(s1_body, fg_color="transparent")
+        r1.pack(fill="x", pady=3)
+
+        ctk.CTkLabel(r1, text="Admission #:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.admission_no_entry = ctk.CTkEntry(r1, width=170, font=ctk.CTkFont(size=12, weight="bold"))
+        self.admission_no_entry.pack(side="left", padx=(0, 16))
+        self._populate_next_admission_no()
+
+        ctk.CTkLabel(r1, text="Gender *:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
         self.gender_var = ctk.StringVar(value="Male")
         self.gender_menu = ctk.CTkOptionMenu(
-            gender_frame, values=["Male", "Female", "Other"], variable=self.gender_var, width=180
+            r1, values=["Male", "Female", "Other"], variable=self.gender_var, width=150
         )
         self.gender_menu.pack(side="left")
 
-        # 3. Guardian Info
-        self.guardian_name = self._add_entry(form_scroll, "Guardian Name *:", "Father / Guardian full name")
-        self.guardian_urdu_name = self._add_entry(form_scroll, "Guardian Urdu:", "والد / سرپرست کا نام", is_rtl=True)
-        self.guardian_phone = self._add_entry(form_scroll, "Guardian Phone *:", "03001234567 (11 digits)")
+        # Row 2: First Name & Last Name
+        r2 = ctk.CTkFrame(s1_body, fg_color="transparent")
+        r2.pack(fill="x", pady=3)
 
-        # 4. Class Group Selection
-        class_frame = ctk.CTkFrame(form_scroll, fg_color="transparent")
-        class_frame.pack(fill="x", pady=4)
+        ctk.CTkLabel(r2, text="First Name *:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.first_name_entry = ctk.CTkEntry(r2, placeholder_text="e.g. Muhammad", width=170)
+        self.first_name_entry.pack(side="left", padx=(0, 16))
+
+        ctk.CTkLabel(r2, text="Last Name:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.last_name_entry = ctk.CTkEntry(r2, placeholder_text="e.g. Ali", width=150)
+        self.last_name_entry.pack(side="left")
+
+        # Row 3: Urdu Name (RTL Justified)
+        r3 = ctk.CTkFrame(s1_body, fg_color="transparent")
+        r3.pack(fill="x", pady=3)
+
+        ctk.CTkLabel(r3, text="Urdu Name:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.urdu_name_entry = ctk.CTkEntry(
+            r3,
+            placeholder_text="مثال: محمد علی",
+            width=420,
+            justify="right",
+            font=ctk.CTkFont(family="Segoe UI", size=13)
+        )
+        self.urdu_name_entry.pack(side="left")
+
+        # Row 4: Date of Birth & B-Form
+        r4 = ctk.CTkFrame(s1_body, fg_color="transparent")
+        r4.pack(fill="x", pady=3)
+
+        ctk.CTkLabel(r4, text="Date of Birth:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.dob_entry = ctk.CTkEntry(r4, placeholder_text="YYYY-MM-DD", width=170)
+        self.dob_entry.pack(side="left", padx=(0, 16))
+
+        ctk.CTkLabel(r4, text="B-Form #:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.b_form_entry = ctk.CTkEntry(r4, placeholder_text="e.g. 35201-1234567-1", width=150)
+        self.b_form_entry.pack(side="left")
+
+        # Row 5: Guardian Name & Guardian Urdu (RTL Justified)
+        r5 = ctk.CTkFrame(s1_body, fg_color="transparent")
+        r5.pack(fill="x", pady=3)
+
+        ctk.CTkLabel(r5, text="Guardian Name *:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.guardian_name_entry = ctk.CTkEntry(r5, placeholder_text="Father / Guardian name", width=170)
+        self.guardian_name_entry.pack(side="left", padx=(0, 16))
+
+        ctk.CTkLabel(r5, text="Urdu Name:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.guardian_urdu_entry = ctk.CTkEntry(
+            r5,
+            placeholder_text="والد / سرپرست کا نام",
+            width=150,
+            justify="right",
+            font=ctk.CTkFont(family="Segoe UI", size=13)
+        )
+        self.guardian_urdu_entry.pack(side="left")
+
+        # Row 6: Relation & Guardian CNIC
+        r6 = ctk.CTkFrame(s1_body, fg_color="transparent")
+        r6.pack(fill="x", pady=3)
+
+        ctk.CTkLabel(r6, text="Relation:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.relation_var = ctk.StringVar(value="Father")
+        self.relation_menu = ctk.CTkOptionMenu(
+            r6, values=["Father", "Mother", "Uncle", "Grandfather", "Guardian"], variable=self.relation_var, width=170
+        )
+        self.relation_menu.pack(side="left", padx=(0, 16))
+
+        ctk.CTkLabel(r6, text="CNIC #:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.guardian_cnic_entry = ctk.CTkEntry(r6, placeholder_text="e.g. 35201-7654321-1", width=150)
+        self.guardian_cnic_entry.pack(side="left")
+
+        # Row 7: Phone (with FocusOut Normalization) & WhatsApp
+        r7 = ctk.CTkFrame(s1_body, fg_color="transparent")
+        r7.pack(fill="x", pady=3)
+
+        ctk.CTkLabel(r7, text="Mobile Phone *:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.guardian_phone = ctk.CTkEntry(r7, placeholder_text="03001234567 (11 digits)", width=170)
+        self.guardian_phone.pack(side="left", padx=(0, 16))
+        self.guardian_phone.bind("<FocusOut>", self._on_phone_focus_out)
+
+        ctk.CTkLabel(r7, text="WhatsApp:", width=80, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.guardian_whatsapp = ctk.CTkEntry(r7, placeholder_text="03001234567", width=150)
+        self.guardian_whatsapp.pack(side="left")
+        self.guardian_whatsapp.bind("<FocusOut>", self._on_whatsapp_focus_out)
+
+        # Row 8: Residential Address
+        r8 = ctk.CTkFrame(s1_body, fg_color="transparent")
+        r8.pack(fill="x", pady=3)
+
+        ctk.CTkLabel(r8, text="Address:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.address_entry = ctk.CTkEntry(r8, placeholder_text="Residential Street / Mohallah / City", width=420)
+        self.address_entry.pack(side="left")
+
+        # Row 9: Previous School SLC
+        r9 = ctk.CTkFrame(s1_body, fg_color="transparent")
+        r9.pack(fill="x", pady=3)
+
+        ctk.CTkLabel(r9, text="Previous SLC:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.previous_slc_entry = ctk.CTkEntry(r9, placeholder_text="Previous School Leaving Certificate # & School Name", width=420)
+        self.previous_slc_entry.pack(side="left")
+
+        # =====================================================================
+        # STAGE 2: Academic & Fee Enrollment (تعلیمی و فیس اندراج)
+        # =====================================================================
+        stage2_card = ctk.CTkFrame(form_scroll, fg_color="#1E293B", corner_radius=8)
+        stage2_card.pack(fill="x", padx=4, pady=(6, 4))
+
+        stage2_header = ctk.CTkFrame(stage2_card, fg_color="#0F172A", corner_radius=6, height=32)
+        stage2_header.pack(fill="x", padx=6, pady=6)
         ctk.CTkLabel(
-            class_frame, text="Assign Class *:", width=140, anchor="w",
-            font=ctk.CTkFont(size=12, weight="bold")
-        ).pack(side="left")
+            stage2_header,
+            text="💰 Stage 2: Academic & Fee Enrollment (تعلیمی و فیس اندراج)",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#10B981"
+        ).pack(side="left", padx=10, pady=4)
 
-        self.class_groups_map: Dict[str, int] = {}
+        s2_body = ctk.CTkFrame(stage2_card, fg_color="transparent")
+        s2_body.pack(fill="x", padx=12, pady=(0, 10))
+
+        # Row 1: Class Selection + Inline Quick Add Class + Base Tuition
+        cr1 = ctk.CTkFrame(s2_body, fg_color="transparent")
+        cr1.pack(fill="x", pady=3)
+
+        ctk.CTkLabel(cr1, text="Assign Class *:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
         self._refresh_class_groups()
 
-        initial_class = self.class_names[0] if self.class_names else "Default Class"
+        initial_class = self.class_names[0] if self.class_names else "Class 1 (Section A)"
         self.class_var = ctk.StringVar(value=initial_class)
         self.class_menu = ctk.CTkOptionMenu(
-            class_frame, values=self.class_names or ["Default Class"], variable=self.class_var, width=185
+            cr1, values=self.class_names or [initial_class], variable=self.class_var,
+            command=self._on_class_changed, width=170
         )
         self.class_menu.pack(side="left", padx=(0, 6))
 
-        # Inline "➕ New Class" sub-modal button
         add_class_btn = ctk.CTkButton(
-            class_frame,
-            text="➕ New Class",
-            width=90,
-            height=28,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color="#1E293B",
-            hover_color="#334155",
-            border_width=1,
-            border_color="#10B981",
-            text_color="#10B981",
+            cr1, text="➕", width=34, height=28,
+            fg_color="#334155", hover_color="#475569",
+            font=ctk.CTkFont(size=12, weight="bold"),
             command=self._open_quick_add_class
         )
-        add_class_btn.pack(side="left")
+        add_class_btn.pack(side="left", padx=(0, 16))
 
-        # 5. Monthly Fee Discount
-        self.discount_entry = self._add_entry(form_scroll, "Monthly Discount (PKR):", "0.00")
+        ctk.CTkLabel(cr1, text="Base Fee:", width=70, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.base_tuition_label = ctk.CTkLabel(
+            cr1, text="PKR 0.00", width=120, anchor="w",
+            font=ctk.CTkFont(size=12, weight="bold"), text_color="#38BDF8"
+        )
+        self.base_tuition_label.pack(side="left")
 
-        # Buttons on bottom
+        # Row 2: One-Time Upfront Charges
+        cr2 = ctk.CTkFrame(s2_body, fg_color="transparent")
+        cr2.pack(fill="x", pady=3)
+
+        ctk.CTkLabel(cr2, text="One-Time Heads:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+
+        # Admission Fee
+        ctk.CTkLabel(cr2, text="Admission:", font=ctk.CTkFont(size=11)).pack(side="left", padx=(0, 4))
+        self.adm_fee_entry = ctk.CTkEntry(cr2, width=72, font=ctk.CTkFont(size=11))
+        self.adm_fee_entry.insert(0, "0.00")
+        self.adm_fee_entry.pack(side="left", padx=(0, 10))
+        self.adm_fee_entry.bind("<KeyRelease>", self._recalculate_totals)
+
+        # Prospectus / Registration
+        ctk.CTkLabel(cr2, text="Prospectus:", font=ctk.CTkFont(size=11)).pack(side="left", padx=(0, 4))
+        self.prospectus_fee_entry = ctk.CTkEntry(cr2, width=72, font=ctk.CTkFont(size=11))
+        self.prospectus_fee_entry.insert(0, "0.00")
+        self.prospectus_fee_entry.pack(side="left", padx=(0, 10))
+        self.prospectus_fee_entry.bind("<KeyRelease>", self._recalculate_totals)
+
+        # Security Deposit
+        ctk.CTkLabel(cr2, text="Security:", font=ctk.CTkFont(size=11)).pack(side="left", padx=(0, 4))
+        self.security_entry = ctk.CTkEntry(cr2, width=72, font=ctk.CTkFont(size=11))
+        self.security_entry.insert(0, "0.00")
+        self.security_entry.pack(side="left")
+        self.security_entry.bind("<KeyRelease>", self._recalculate_totals)
+
+        # Row 3: Concession Selection & Sibling Auto-Detect
+        cr3 = ctk.CTkFrame(s2_body, fg_color="transparent")
+        cr3.pack(fill="x", pady=3)
+
+        ctk.CTkLabel(cr3, text="Concession:", width=110, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.concession_var = ctk.StringVar(value="Standard (0%)")
+        concession_options = [
+            "Standard (0%)",
+            "Sibling Auto-Detect",
+            "Kinship / Staff (50%)",
+            "Scholarship (100%)",
+            "Custom Flat Discount"
+        ]
+        self.concession_menu = ctk.CTkOptionMenu(
+            cr3, values=concession_options, variable=self.concession_var,
+            command=self._on_concession_mode_changed, width=170
+        )
+        self.concession_menu.pack(side="left", padx=(0, 16))
+
+        ctk.CTkLabel(cr3, text="Discount:", width=70, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
+        self.concession_amount_entry = ctk.CTkEntry(cr3, width=120, font=ctk.CTkFont(size=12))
+        self.concession_amount_entry.insert(0, "0.00")
+        self.concession_amount_entry.pack(side="left")
+        self.concession_amount_entry.bind("<KeyRelease>", self._recalculate_totals)
+
+        # Concession Detection Feedback Label
+        self.concession_info_label = ctk.CTkLabel(
+            s2_body,
+            text="Standard enrollment: 0% concession applied.",
+            font=ctk.CTkFont(size=11),
+            text_color="#94A3B8",
+            anchor="w"
+        )
+        self.concession_info_label.pack(fill="x", padx=(110, 0), pady=(0, 4))
+
+        # Row 4: Live Dynamic Summary Card
+        summary_card = ctk.CTkFrame(s2_body, fg_color="#0F172A", corner_radius=6)
+        summary_card.pack(fill="x", pady=(4, 0))
+
+        sc_grid = ctk.CTkFrame(summary_card, fg_color="transparent")
+        sc_grid.pack(fill="x", padx=12, pady=6)
+
+        ctk.CTkLabel(sc_grid, text="Net Monthly Tuition:", font=ctk.CTkFont(size=12, weight="bold"), text_color="#F8FAFC").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.net_monthly_label = ctk.CTkLabel(sc_grid, text="PKR 0.00", font=ctk.CTkFont(size=13, weight="bold"), text_color="#10B981")
+        self.net_monthly_label.grid(row=0, column=1, sticky="w", padx=(0, 24))
+
+        ctk.CTkLabel(sc_grid, text="Total Upfront Initial Payable:", font=ctk.CTkFont(size=12, weight="bold"), text_color="#F8FAFC").grid(row=0, column=2, sticky="w", padx=(0, 8))
+        self.total_payable_label = ctk.CTkLabel(sc_grid, text="PKR 0.00", font=ctk.CTkFont(size=13, weight="bold"), text_color="#F59E0B")
+        self.total_payable_label.grid(row=0, column=3, sticky="w")
+
+        # =====================================================================
+        # ACTION BAR & ACCELERATORS
+        # =====================================================================
         btn_box = ctk.CTkFrame(self.card, fg_color="transparent")
-        btn_box.pack(fill="x", padx=12, pady=(8, 12))
+        btn_box.pack(fill="x", padx=12, pady=(6, 10))
 
-        btn_cancel = ctk.CTkButton(
-            btn_box, text="Cancel", command=self.close,
-            fg_color=THEME_COLORS["border_color"], width=100
+        self.btn_cancel = ctk.CTkButton(
+            btn_box, text="✖ Cancel [Esc]", width=110, fg_color=THEME_COLORS["border_color"],
+            hover_color="#334155", command=self.close
         )
-        btn_cancel.pack(side="right", padx=6)
+        self.btn_cancel.pack(side="left", padx=4)
 
-        btn_save = ctk.CTkButton(
-            btn_box, text="Save Admission", command=self._submit_admission,
-            fg_color=THEME_COLORS["brand_primary"], hover_color=THEME_COLORS["brand_accent"],
-            font=ctk.CTkFont(size=13, weight="bold"), width=140
+        self.btn_submit_print = ctk.CTkButton(
+            btn_box,
+            text="🖨️ Submit & Print Voucher [Ctrl+P]",
+            width=230,
+            fg_color=THEME_COLORS["brand_primary"],
+            hover_color=THEME_COLORS["brand_accent"],
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self._on_submit_and_print
         )
-        btn_save.pack(side="right", padx=6)
+        self.btn_submit_print.pack(side="right", padx=4)
+
+        self.btn_save_only = ctk.CTkButton(
+            btn_box,
+            text="💾 Save Only",
+            width=120,
+            fg_color="#334155",
+            hover_color="#475569",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self._on_save_only
+        )
+        self.btn_save_only.pack(side="right", padx=4)
+
+        # Explicit Return-key navigation for rapid clerk data-entry
+        self.first_name_entry.bind("<Return>", lambda e: self.last_name_entry.focus_set())
+        self.last_name_entry.bind("<Return>", lambda e: self.urdu_name_entry.focus_set())
+        self.urdu_name_entry.bind("<Return>", lambda e: self.dob_entry.focus_set())
+        self.dob_entry.bind("<Return>", lambda e: self.b_form_entry.focus_set())
+        self.b_form_entry.bind("<Return>", lambda e: self.guardian_name_entry.focus_set())
+        self.guardian_name_entry.bind("<Return>", lambda e: self.guardian_urdu_entry.focus_set())
+        self.guardian_urdu_entry.bind("<Return>", lambda e: self.guardian_cnic_entry.focus_set())
+        self.guardian_cnic_entry.bind("<Return>", lambda e: self.guardian_phone.focus_set())
+        self.guardian_phone.bind("<Return>", lambda e: self.guardian_whatsapp.focus_set())
+        self.guardian_whatsapp.bind("<Return>", lambda e: self.address_entry.focus_set())
+        self.address_entry.bind("<Return>", lambda e: self.previous_slc_entry.focus_set())
+        self.previous_slc_entry.bind("<Return>", lambda e: self.adm_fee_entry.focus_set())
+        self.adm_fee_entry.bind("<Return>", lambda e: self.prospectus_fee_entry.focus_set())
+        self.prospectus_fee_entry.bind("<Return>", lambda e: self.security_entry.focus_set())
+        self.security_entry.bind("<Return>", lambda e: self.concession_amount_entry.focus_set())
+        self.concession_amount_entry.bind("<Return>", lambda e: self._on_submit_and_print())
+
+        # Backward compatibility aliases for test assertions
+        self.urdu_name = self.urdu_name_entry
+        self.guardian_urdu_name = self.guardian_urdu_entry
+        self.first_name = self.first_name_entry
+        self.last_name = self.last_name_entry
+        self.guardian_name = self.guardian_name_entry
+        self.discount_entry = self.concession_amount_entry
+
+        # Initial Calculations & Focus
+        self._on_class_changed(self.class_var.get())
+        self.first_name_entry.focus_set()
+
+    def _populate_next_admission_no(self) -> None:
+        """Prefills sequential admission number preview."""
+        if self.parent_view.db_conn:
+            try:
+                next_no = generate_next_admission_number(self.parent_view.db_conn)
+                self.admission_no_entry.delete(0, "end")
+                self.admission_no_entry.insert(0, next_no)
+            except Exception:
+                pass
 
     def _refresh_class_groups(self) -> None:
-        """Reloads class groups from database and updates internal lookup map."""
+        """Loads available classes and their tuition fees from SQLite."""
         self.class_groups_map = {}
+        self.class_sessions_map = {}
+        self.class_tuition_map = {}
         if self.parent_view.db_conn:
             cur = self.parent_view.db_conn.cursor()
-            cur.execute("SELECT id, name, section_or_batch FROM class_groups ORDER BY name, section_or_batch;")
+            cur.execute("""
+                SELECT id, name, section_or_batch, monthly_tuition_fee, session_id
+                FROM class_groups
+                ORDER BY name, section_or_batch;
+            """)
             for row in cur.fetchall():
-                display_name = f"{row[1]} ({row[2]})"
-                self.class_groups_map[display_name] = row[0]
+                c_id, c_name, c_sec, c_fee, c_sess = row[0], row[1], row[2], row[3], row[4]
+                display_name = f"{c_name} ({c_sec})"
+                self.class_groups_map[display_name] = c_id
+                self.class_sessions_map[display_name] = c_sess
+                try:
+                    self.class_tuition_map[display_name] = Decimal(str(c_fee))
+                except Exception:
+                    self.class_tuition_map[display_name] = Decimal("0.00")
+
         self.class_names = list(self.class_groups_map.keys())
 
     def _open_quick_add_class(self) -> None:
-        """Opens lightweight modal to add a class group on the fly."""
+        """Opens standalone QuickAddClassModal dialog."""
         QuickAddClassModal(self)
 
     def on_class_created(self, class_id: int, display_name: str) -> None:
-        """Callback invoked by QuickAddClassModal when a class is created."""
+        """Callback from QuickAddClassModal when a class is registered."""
         self._refresh_class_groups()
         if hasattr(self, "class_menu"):
             self.class_menu.configure(values=self.class_names)
             self.class_var.set(display_name)
+            self._on_class_changed(display_name)
 
-    def _add_entry(self, parent, label: str, placeholder: str, is_rtl: bool = False) -> ctk.CTkEntry:
-        f = ctk.CTkFrame(parent, fg_color="transparent")
-        f.pack(fill="x", pady=4)
-        ctk.CTkLabel(f, text=label, width=140, anchor="w", font=ctk.CTkFont(size=12, weight="bold")).pack(side="left")
-        e = ctk.CTkEntry(
-            f,
-            placeholder_text=placeholder,
-            width=280,
-            justify="right" if is_rtl else "left",
-            font=ctk.CTkFont(family="Segoe UI", size=13) if is_rtl else None
-        )
-        e.pack(side="left")
-        return e
+    def _on_class_changed(self, choice: str) -> None:
+        """Updates tuition display and triggers recalculation."""
+        tuition = self.class_tuition_map.get(choice, Decimal("0.00"))
+        self.base_tuition_label.configure(text=f"PKR {tuition:,.2f}")
+        self._on_concession_mode_changed(self.concession_var.get())
+
+    def _on_phone_focus_out(self, event=None) -> None:
+        """Normalizes guardian mobile phone on blur without interrupting cursor typing."""
+        val = self.guardian_phone.get().strip()
+        if val:
+            try:
+                normalized = normalize_pakistan_phone(val)
+                if normalized != val:
+                    self.guardian_phone.delete(0, "end")
+                    self.guardian_phone.insert(0, normalized)
+            except Exception:
+                pass
+        if self.concession_var.get() == "Sibling Auto-Detect":
+            self._on_concession_mode_changed("Sibling Auto-Detect")
+
+    def _on_whatsapp_focus_out(self, event=None) -> None:
+        """Normalizes guardian WhatsApp on blur."""
+        val = self.guardian_whatsapp.get().strip()
+        if val:
+            try:
+                normalized = normalize_pakistan_phone(val)
+                if normalized != val:
+                    self.guardian_whatsapp.delete(0, "end")
+                    self.guardian_whatsapp.insert(0, normalized)
+            except Exception:
+                pass
+
+    def _on_concession_mode_changed(self, mode: str) -> None:
+        """Applies concession formulas and updates discount entry."""
+        sel_class = self.class_var.get()
+        base_tuition = self.class_tuition_map.get(sel_class, Decimal("0.00"))
+
+        if mode == "Standard (0%)":
+            self.concession_amount_entry.configure(state="normal")
+            self.concession_amount_entry.delete(0, "end")
+            self.concession_amount_entry.insert(0, "0.00")
+            self.concession_info_label.configure(text="Standard enrollment: 0% concession applied.")
+        elif mode == "Sibling Auto-Detect":
+            phone = self.guardian_phone.get().strip()
+            if phone and self.parent_view.db_conn:
+                try:
+                    disc = calculate_sibling_discount(self.parent_view.db_conn, phone, base_tuition)
+                    # Count existing active siblings
+                    cur = self.parent_view.db_conn.cursor()
+                    try:
+                        norm = normalize_pakistan_phone(phone)
+                    except Exception:
+                        norm = phone
+                    cur.execute(
+                        """
+                        SELECT COUNT(DISTINCT s.id)
+                        FROM students s
+                        JOIN enrollments e ON s.id = e.student_id
+                        WHERE (s.guardian_phone = ? OR s.guardian_phone = ?) AND e.status = 'Active';
+                        """,
+                        (norm, phone)
+                    )
+                    count = cur.fetchone()[0]
+                    rank_str = "1st child (0%)" if count == 0 else ("2nd child (25%)" if count == 1 else f"{count + 1}th child (50%)")
+                    self.concession_amount_entry.configure(state="normal")
+                    self.concession_amount_entry.delete(0, "end")
+                    self.concession_amount_entry.insert(0, str(disc))
+                    self.concession_info_label.configure(
+                        text=f"Detected {count} active sibling(s) -> {rank_str}: PKR {disc:,.2f} concession."
+                    )
+                except Exception as ex:
+                    self.concession_info_label.configure(text=f"Sibling detection error: {ex}")
+            else:
+                self.concession_amount_entry.configure(state="normal")
+                self.concession_amount_entry.delete(0, "end")
+                self.concession_amount_entry.insert(0, "0.00")
+                self.concession_info_label.configure(text="Enter valid 11-digit guardian mobile to auto-detect siblings.")
+        elif mode == "Kinship / Staff (50%)":
+            disc = (base_tuition * Decimal("0.50")).quantize(Decimal("0.01"))
+            self.concession_amount_entry.configure(state="normal")
+            self.concession_amount_entry.delete(0, "end")
+            self.concession_amount_entry.insert(0, str(disc))
+            self.concession_info_label.configure(text="Staff / Kinship quota: 50% tuition discount applied.")
+        elif mode == "Scholarship (100%)":
+            disc = base_tuition.quantize(Decimal("0.01"))
+            self.concession_amount_entry.configure(state="normal")
+            self.concession_amount_entry.delete(0, "end")
+            self.concession_amount_entry.insert(0, str(disc))
+            self.concession_info_label.configure(text="Full Merit / Need Scholarship: 100% tuition waiver.")
+        elif mode == "Custom Flat Discount":
+            self.concession_amount_entry.configure(state="normal")
+            self.concession_info_label.configure(text="Enter custom monthly discount amount in PKR.")
+
+        self._recalculate_totals()
+
+    def _recalculate_totals(self, event=None) -> None:
+        """Recalculates net monthly fee and total upfront initial payable."""
+        sel_class = self.class_var.get()
+        base_tuition = self.class_tuition_map.get(sel_class, Decimal("0.00"))
+
+        try:
+            concession = Decimal(_clean_numeric_input(self.concession_amount_entry.get()))
+        except Exception:
+            concession = Decimal("0.00")
+
+        try:
+            adm_fee = Decimal(_clean_numeric_input(self.adm_fee_entry.get()))
+        except Exception:
+            adm_fee = Decimal("0.00")
+
+        try:
+            pros_fee = Decimal(_clean_numeric_input(self.prospectus_fee_entry.get()))
+        except Exception:
+            pros_fee = Decimal("0.00")
+
+        try:
+            sec_dep = Decimal(_clean_numeric_input(self.security_entry.get()))
+        except Exception:
+            sec_dep = Decimal("0.00")
+
+        net_monthly = max(Decimal("0.00"), base_tuition - concession)
+        one_time_total = adm_fee + pros_fee + sec_dep
+        initial_payable = net_monthly + one_time_total
+
+        self.net_monthly_label.configure(text=f"PKR {net_monthly:,.2f}")
+        self.total_payable_label.configure(text=f"PKR {initial_payable:,.2f}")
 
     def _submit_admission(self) -> None:
-        """Validates inputs and calls StudentService.register_student."""
-        fn = self.first_name.get().strip()
-        ln = self.last_name.get().strip()
-        un = self.urdu_name.get().strip() or None
-        gender = self.gender_var.get()
-        gn = self.guardian_name.get().strip()
-        gun = self.guardian_urdu_name.get().strip() or None
-        phone = self.guardian_phone.get().strip()
-        selected_class = self.class_var.get()
-        class_id = self.class_groups_map.get(selected_class)
-        discount_str = self.discount_entry.get().strip() or "0.00"
+        """Compatibility method for test automation."""
+        self._on_save_only()
 
-        if not fn or not gn or not phone:
-            self.parent_view.show_error("Validation Error", "Please fill in all mandatory fields (*).")
+    def _on_save_only(self) -> None:
+        """Executes admission without generating or printing paper voucher."""
+        self._execute_admission(generate_voucher=False)
+
+    def _on_submit_and_print(self) -> None:
+        """Executes admission and generates 3-panel fee voucher with printer spooler safety."""
+        self._execute_admission(generate_voucher=True)
+
+    def _execute_admission(self, generate_voucher: bool = True) -> None:
+        """Validates inputs and commits atomic walk-in admission transaction."""
+        fn = self.first_name_entry.get().strip()
+        ln = self.last_name_entry.get().strip()
+        un = self.urdu_name_entry.get().strip() or None
+        gender = self.gender_var.get()
+        dob = self.dob_entry.get().strip() or None
+        b_form = self.b_form_entry.get().strip() or None
+        gn = self.guardian_name_entry.get().strip()
+        gun = self.guardian_urdu_entry.get().strip() or None
+        rel = self.relation_var.get()
+        phone = self.guardian_phone.get().strip()
+        wa = self.guardian_whatsapp.get().strip() or None
+        cnic = self.guardian_cnic_entry.get().strip() or None
+        address = self.address_entry.get().strip() or None
+        prev_slc = self.previous_slc_entry.get().strip() or None
+        adm_no = self.admission_no_entry.get().strip()
+
+        if not fn:
+            self.parent_view.show_error("Validation Error", "Student First Name is required.")
+            self.first_name_entry.focus_set()
+            return
+
+        if not gn:
+            self.parent_view.show_error("Validation Error", "Guardian Name is required.")
+            self.guardian_name_entry.focus_set()
+            return
+
+        if not phone:
+            self.parent_view.show_error("Validation Error", "Guardian Mobile Phone is required.")
+            self.guardian_phone.focus_set()
             return
 
         try:
-            discount = Decimal(discount_str)
-        except Exception:
-            self.parent_view.show_error("Validation Error", "Invalid discount amount specified.")
+            valid_phone = normalize_pakistan_phone(phone)
+        except Exception as p_err:
+            self.parent_view.show_error("Phone Error", str(p_err))
+            self.guardian_phone.focus_set()
             return
 
+        selected_class = self.class_var.get()
+        class_id = self.class_groups_map.get(selected_class)
+        session_id = self.class_sessions_map.get(selected_class)
         if not class_id:
             self.parent_view.show_error("Validation Error", "Please select a valid class group.")
             return
 
-        try:
-            # Query session_id for this class_group
+        if not session_id and self.parent_view.db_conn:
             cur = self.parent_view.db_conn.cursor()
             cur.execute("SELECT session_id FROM class_groups WHERE id = ?;", (class_id,))
             s_row = cur.fetchone()
-            if not s_row:
-                raise ValueError("Could not find academic session for selected class.")
-            session_id = s_row[0]
+            if s_row:
+                session_id = s_row[0]
 
-            dto = StudentDTO(
+        try:
+            concession = Decimal(_clean_numeric_input(self.concession_amount_entry.get()))
+            adm_fee = Decimal(_clean_numeric_input(self.adm_fee_entry.get()))
+            pros_fee = Decimal(_clean_numeric_input(self.prospectus_fee_entry.get()))
+            sec_dep = Decimal(_clean_numeric_input(self.security_entry.get()))
+        except Exception:
+            self.parent_view.show_error("Validation Error", "Fee and discount amounts must be numeric.")
+            return
+
+        try:
+            student_dto = StudentDTO(
+                admission_number=adm_no,
                 first_name=fn,
                 last_name=ln or None,
                 urdu_name=un,
                 gender=gender,
+                date_of_birth=dob,
+                b_form_number=b_form,
                 guardian_name=gn,
                 guardian_urdu_name=gun,
-                guardian_phone=phone,
+                guardian_relation=rel,
+                guardian_phone=valid_phone,
+                guardian_whatsapp=wa,
+                guardian_cnic=cnic,
+                residential_address=address,
+                previous_school_slc=prev_slc,
             )
-            student_id, enrollment_id = self.student_service.register_student(
-                student_data=dto,
+
+            voucher_pdf = self.fee_service.process_walkin_admission(
+                student_data=student_dto,
                 class_group_id=class_id,
                 session_id=session_id,
-                custom_discount_amount=discount,
+                concession_discount=concession,
+                admission_fee=adm_fee,
+                prospectus_fee=pros_fee,
+                security_deposit=sec_dep,
+                generate_voucher=generate_voucher
             )
-            created_s = self.student_service.get_student_by_id(student_id)
-            adm_no = created_s.get("admission_number", f"ID-{student_id}") if created_s else f"ID-{student_id}"
 
-            self.parent_view.show_info(
-                "Admission Complete",
-                f"Student admitted successfully!\nAdmission #: {adm_no}"
-            )
+            # Spooler safety on Windows
+            if generate_voucher and voucher_pdf and os.path.exists(voucher_pdf):
+                try:
+                    os.startfile(voucher_pdf, "print")
+                except (OSError, AttributeError):
+                    try:
+                        os.startfile(voucher_pdf)
+                    except Exception:
+                        pass
+
+                self.parent_view.show_info(
+                    "Admission & Voucher Ready",
+                    f"Student admitted successfully!\nAdmission #: {adm_no}\n\n3-Panel Fee Voucher generated:\n{voucher_pdf}"
+                )
+            else:
+                self.parent_view.show_info(
+                    "Admission Complete",
+                    f"Student admitted successfully!\nAdmission #: {adm_no}"
+                )
+
             self.parent_view.refresh_data()
             self.close()
 
         except Exception as exc:
-            self.parent_view.show_error("Registration Failed", str(exc))
+            logger.error(f"Admission processing error: {exc}", exc_info=True)
+            self.parent_view.show_error("Admission Failed", str(exc))
 
 
 # =============================================================================

@@ -131,6 +131,19 @@ class StudentService:
             )
             return cursor.lastrowid
 
+    def get_class_groups(self, session_id: Optional[int] = None) -> list[dict[str, Any]]:
+        """Retrieves all registered class groups, optionally filtered by session_id."""
+        cursor = self.conn.cursor()
+        sql = "SELECT id, session_id, name, section_or_batch, group_type, monthly_tuition_fee, created_at FROM class_groups"
+        params = []
+        if session_id is not None:
+            sql += " WHERE session_id = ?"
+            params.append(session_id)
+        sql += " ORDER BY name, section_or_batch;"
+        cursor.execute(sql, params)
+        rows = cursor.fetchall()
+        return [{k: r[k] for k in r.keys()} for r in rows]
+
     def register_student(
         self,
         student_data: StudentDTO,
@@ -206,8 +219,8 @@ class StudentService:
                     admission_number, first_name, last_name, urdu_name, gender,
                     date_of_birth, b_form_number, guardian_name, guardian_urdu_name,
                     guardian_relation, guardian_phone, guardian_whatsapp, guardian_cnic,
-                    residential_address, emergency_contact, is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                    residential_address, emergency_contact, previous_school_slc, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """,
                 (
                     admission_no,
@@ -225,6 +238,7 @@ class StudentService:
                     student_data.guardian_cnic,
                     student_data.residential_address,
                     student_data.emergency_contact,
+                    getattr(student_data, "previous_school_slc", None),
                     1 if student_data.is_active else 0
                 )
             )
@@ -426,6 +440,7 @@ class StudentService:
                     guardian_cnic = ?,
                     residential_address = ?,
                     emergency_contact = ?,
+                    previous_school_slc = ?,
                     is_active = ?,
                     updated_at = DATETIME('now')
                 WHERE id = ?;
@@ -445,6 +460,7 @@ class StudentService:
                     student_data.guardian_cnic,
                     student_data.residential_address,
                     student_data.emergency_contact,
+                    getattr(student_data, "previous_school_slc", None),
                     1 if student_data.is_active else 0,
                     student_data.id
                 )

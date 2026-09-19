@@ -52,6 +52,7 @@ hiddenimports = [
     "ui.attendance_view",
     "ui.exam_view",
     "ui.settings_view",
+    "ui.quick_add_class_modal",
     "app.reports.fee_voucher_generator",
     "app.reports.report_card_generator",
     "app.reports.urdu_formatter",

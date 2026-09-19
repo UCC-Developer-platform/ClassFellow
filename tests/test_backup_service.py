@@ -37,7 +37,7 @@ def populated_db(tmp_path):
     # Insert baseline test data
     conn.execute(
         "INSERT OR IGNORE INTO academic_sessions (name, start_date, end_date, is_active) "
-        "VALUES ('2026-2027', '2026-04-01', '2027-03-31', 1);"
+        "VALUES ('2026-2027 Academic Session', '2026-04-01', '2027-03-31', 1);"
     )
     conn.execute(
         "INSERT INTO class_groups (session_id, name, section_or_batch, group_type, monthly_tuition_fee) "
@@ -78,7 +78,7 @@ def test_tier1_daily_backup_online_snapshot(backup_service):
         assert cur.fetchone()[0] == "ok"
 
         cur.execute("PRAGMA user_version;")
-        assert cur.fetchone()[0] == 3  # Schema version v3 (Exam subsystem)
+        assert cur.fetchone()[0] == 4  # Schema version v4 (Punjab admission subsystem)
 
         cur.execute("SELECT COUNT(*) FROM students;")
         assert cur.fetchone()[0] == 1
@@ -158,7 +158,7 @@ def test_tier2_usb_export_with_manifest_and_sha256(backup_service, tmp_path):
 
     manifest = verify_result["manifest"]
     assert manifest["app_name"] == "ClassFellow"
-    assert manifest["schema_version"] == 3
+    assert manifest["schema_version"] == 4
     assert manifest["db_file"] == "classfellow_snapshot.db"
     assert manifest["table_counts"]["students"] == 1
     assert "sha256" in manifest

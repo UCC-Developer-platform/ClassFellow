@@ -10,7 +10,7 @@ import sqlite3
 from typing import Callable
 from database import get_schema_version, set_schema_version
 
-SCHEMA_VERSION_CURRENT = 3
+SCHEMA_VERSION_CURRENT = 4
 
 
 def migration_v1_initial_schema(conn: sqlite3.Connection) -> None:
@@ -141,7 +141,8 @@ def migration_v1_initial_schema(conn: sqlite3.Connection) -> None:
             amount TEXT NOT NULL,
             payment_date TEXT NOT NULL,
             receipt_number TEXT NOT NULL UNIQUE,
-            payment_method TEXT NOT NULL DEFAULT 'Cash' CHECK (payment_method IN ('Cash', 'BankTransfer', 'OnlineDeposit', 'Cheque')),
+            payment_method TEXT NOT NULL DEFAULT 'Cash'
+                CHECK (payment_method IN ('Cash', 'BankTransfer', 'OnlineDeposit', 'Cheque')),
             status TEXT NOT NULL DEFAULT 'Issued' CHECK (status IN ('Issued', 'Reversed', 'Cancelled')),
             reversal_reason TEXT,
             recorded_by_user_id INTEGER,
@@ -219,7 +220,10 @@ def migration_v2_attendance_schema(conn: sqlite3.Connection) -> None:
         """)
 
         # 3. High-Performance Lookup Indexes
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_attendance_enrollment_date ON attendance_records(enrollment_id, attendance_date);")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_attendance_enrollment_date "
+            "ON attendance_records(enrollment_id, attendance_date);"
+        )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_attendance_date_status ON attendance_records(attendance_date, status);")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_attendance_batch ON attendance_records(batch_session_id);")
 
@@ -333,10 +337,43 @@ def migration_v3_exam_schema(conn: sqlite3.Connection) -> None:
     set_schema_version(conn, 3)
 
 
+def migration_v4_punjab_admission_spec(conn: sqlite3.Connection) -> None:
+    """
+    Executes Migration v4: Extends students table with Punjab admission specification
+    fields (b_form_number, guardian_urdu_name, guardian_relation, guardian_whatsapp,
+    guardian_cnic, previous_school_slc, updated_at) and performance indexes.
+    """
+    with conn:
+        cur = conn.cursor()
+        cur.execute("PRAGMA table_info(students);")
+        existing_cols = {row[1] for row in cur.fetchall()}
+
+        col_defs = [
+            ("b_form_number", "TEXT"),
+            ("guardian_urdu_name", "TEXT"),
+            ("guardian_relation", "TEXT NOT NULL DEFAULT 'Father'"),
+            ("guardian_whatsapp", "TEXT"),
+            ("guardian_cnic", "TEXT"),
+            ("previous_school_slc", "TEXT"),
+            ("updated_at", "TEXT NOT NULL DEFAULT (DATETIME('now'))"),
+        ]
+
+        for col_name, col_type in col_defs:
+            if col_name not in existing_cols:
+                conn.execute(f"ALTER TABLE students ADD COLUMN {col_name} {col_type};")
+
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_students_admission_no ON students(admission_number);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_students_names ON students(first_name, last_name);")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_students_guardian_phone ON students(guardian_phone);")
+
+    set_schema_version(conn, 4)
+
+
 MIGRATIONS: dict[int, Callable[[sqlite3.Connection], None]] = {
     1: migration_v1_initial_schema,
     2: migration_v2_attendance_schema,
     3: migration_v3_exam_schema,
+    4: migration_v4_punjab_admission_spec,
 }
 
 
@@ -356,28 +393,46 @@ def migrate_to_latest(conn: sqlite3.Connection) -> int:
 
 def seed_default_academic_data(conn: sqlite3.Connection) -> None:
     """
-    Ensures at least one active academic session and baseline class group exist.
+    Ensures an active academic session ('2026-2027 Academic Session'), baseline class
+    group ('Class 1 (Section A)' at PKR 3,500.00), and standard fee heads exist.
     Prevents empty-state dropdown blockers during student admission on fresh zero-state installs.
     """
     with conn:
         cur = conn.cursor()
+        # 1. Academic Session
         cur.execute("SELECT id FROM academic_sessions WHERE is_active = 1 LIMIT 1;")
         row = cur.fetchone()
         if not row:
             cur.execute("""
                 INSERT OR IGNORE INTO academic_sessions (name, start_date, end_date, is_active)
-                VALUES ('2026-2027', '2026-04-01', '2027-03-31', 1);
+                VALUES ('2026-2027 Academic Session', '2026-04-01', '2027-03-31', 1);
             """)
-            cur.execute("SELECT id FROM academic_sessions WHERE name = '2026-2027';")
+            cur.execute("SELECT id FROM academic_sessions WHERE name = '2026-2027 Academic Session';")
             row = cur.fetchone()
 
         session_id = row[0] if row else 1
 
+        # 2. Baseline Class Group
         cur.execute("SELECT COUNT(*) FROM class_groups;")
         if cur.fetchone()[0] == 0:
             cur.execute("""
                 INSERT OR IGNORE INTO class_groups (session_id, name, section_or_batch, group_type, monthly_tuition_fee)
-                VALUES (?, 'Class 1', 'Section A', 'SchoolClass', '2500.00');
+                VALUES (?, 'Class 1', 'Section A', 'SchoolClass', '3500.00');
             """, (session_id,))
 
-
+        # 3. Standard Fee Heads
+        standard_heads = [
+            ("Tuition Fee", "ٹیوشن فیس", 1),
+            ("Admission Fee", "داخلہ فیس", 0),
+            ("Registration / Prospectus", "رجسٹریشن و پراسپیکٹس", 0),
+            ("Security Deposit", "سیکیورٹی ڈپازٹ", 0),
+            ("Previous Arrears", "سابقہ واجبات", 1),
+            ("Examination Fee", "امتحانی فیس", 0),
+            ("Computer Lab Fee", "کمپیوٹر لیب فیس", 1),
+            ("Generator / Utility Charges", "جنریٹر و یوٹیلٹی چارجز", 1),
+        ]
+        for h_name, h_urdu, is_rec in standard_heads:
+            cur.execute("""
+                INSERT OR IGNORE INTO fee_heads (name, urdu_name, is_recurring)
+                VALUES (?, ?, ?);
+            """, (h_name, h_urdu, is_rec))

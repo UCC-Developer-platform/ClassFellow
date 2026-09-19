@@ -95,13 +95,13 @@ class SidebarNavButton(ctk.CTkFrame):
         self.icon_label = ctk.CTkLabel(
             self,
             text=icon,
-            width=36,
+            width=40,
             font=ctk.CTkFont(size=15),
             anchor="center",
             text_color="#F8FAFC",
             cursor="hand2"
         )
-        self.icon_label.grid(row=0, column=0, padx=(4, 0), sticky="nsew")
+        self.icon_label.grid(row=0, column=0, padx=0, sticky="nsew")
 
         self.title_label = ctk.CTkLabel(
             self,
@@ -205,7 +205,7 @@ class ClassFellowApp(ctk.CTk):
         nav_items = [
             ("📊", "Dashboard", "dashboard"),
             ("🎓", "Students", "students"),
-            ("💳", "Fees & Receipts", "fees"),
+            ("🧾", "Fees & Receipts", "fees"),
             ("📅", "Attendance", "attendance"),
             ("📝", "Examinations", "examinations"),
             ("⚙️", "Settings", "settings"),

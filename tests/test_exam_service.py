@@ -187,7 +187,7 @@ def exam_test_setup(student_service, exam_service, attendance_service):
 def test_migration_v3_schema_and_version(db_connection):
     """Validates that migration v3 creates all exam tables and sets user_version to 3."""
     version = migrate_to_latest(db_connection)
-    assert version == 3
+    assert version == SCHEMA_VERSION_CURRENT
     assert get_schema_version(db_connection) == SCHEMA_VERSION_CURRENT
 
     cursor = db_connection.cursor()
